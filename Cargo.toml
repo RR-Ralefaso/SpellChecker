@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Rothang Ralph Ralefaso <rrralefaso@outlook.com>"]
 description = "An Atom IDE-inspired multilingual spell checker"
-repository = "https://github.com/yourusername/spell_checker"
+repository = "https://github.com/RR-Ralefaso/SpellChecker"
 license = "MIT"
 readme = "README.md"
 
