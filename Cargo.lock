@@ -3320,6 +3320,8 @@ dependencies = [
  "encoding_rs",
  "indicatif",
  "lru",
+ "once_cell",
+ "parking_lot",
  "rayon",
  "regex",
  "rfd",

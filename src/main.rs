@@ -1,35 +1,42 @@
-use clap::Parser;           // CLI argument parsing
-use colored::*;             // Colored terminal output
-use rayon::prelude::*;      // Parallel processing  
-use regex::Regex;           // Pattern matching
-use std::collections::HashSet;  // Duplicate tracking
-use std::fs;                // File operations
-use std::io::{self, Write}; // I/O handling
-use std::path::Path;        // Path manipulation
-use walkdir::WalkDir;       // Recursive directory traversal
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use eframe::egui;
+use spell_checker_gui::SpellCheckerApp;
 
-#[derive(Parser, Debug)]
-#[command(author, version, about, long_about = None)]
-struct Args {
-    /// Path to the document file
-    document: String,
+fn main() -> Result<(), eframe::Error> {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([1200.0, 800.0])
+            .with_min_inner_size([800.0, 600.0])
+            .with_title("AtomSpell - Atom IDE Inspired Spell Checker")
+            .with_icon(
+                eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icons/icon.png")[..])
+                    .unwrap(),
+            ),
+        ..Default::default()
+    };
     
-    /// Path to custom dictionary file or directory (optional)
-    #[arg(short, long)]
-    dictionary: Option<String>,
-    
-    /// Show suggestions for misspelled words
-    #[arg(short, long)]
-    suggestions: bool,
-    
-    /// Case-sensitive checking
-    #[arg(short, long)]
-    case_sensitive: bool,
-    
-    /// Include built-in dictionary
-    #[arg(short = 'b', long = "builtin", default_value_t = true)]
-    include_builtin: bool,
+    eframe::run_native(
+        "AtomSpell",
+        options,
+        Box::new(|cc| {
+            // Configure visuals
+            cc.egui_ctx.set_visuals(egui::Visuals::dark());
+            
+            // Load custom font for Atom-like typography
+            let mut fonts = egui::FontDefinitions::default();
+            fonts.font_data.insert(
+                "FiraCode".to_owned(),
+                egui::FontData::from_static(include_bytes!("../assets/fonts/FiraCode-Regular.ttf")),
+            );
+            fonts
+                .families
+                .entry(egui::FontFamily::Proportional)
+                .or_default()
+                .insert(0, "FiraCode".to_owned());
+            cc.egui_ctx.set_fonts(fonts);
+            
+            Box::new(SpellCheckerApp::new(cc))
+        }),
+    )
 }
-
-
