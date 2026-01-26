@@ -3,6 +3,32 @@
 version = 4
 
 [[package]]
+name = "Spellchecker"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "colored",
+ "dashmap",
+ "eframe",
+ "egui",
+ "egui_extras",
+ "encoding_rs",
+ "indicatif",
+ "lru",
+ "once_cell",
+ "parking_lot",
+ "rayon",
+ "regex",
+ "rfd",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "unic-langid",
+ "walkdir",
+]
+
+[[package]]
 name = "ab_glyph"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3304,32 +3330,6 @@ checksum = "9f7916fc008ca5542385b89a3d3ce689953c143e9304a9bf8beec1de48994c0d"
 dependencies = [
  "libc",
  "winapi",
-]
-
-[[package]]
-name = "spellchecker"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "colored",
- "dashmap",
- "eframe",
- "egui",
- "egui_extras",
- "encoding_rs",
- "indicatif",
- "lru",
- "once_cell",
- "parking_lot",
- "rayon",
- "regex",
- "rfd",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "unic-langid",
- "walkdir",
 ]
 
 [[package]]
