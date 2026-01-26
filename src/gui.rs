@@ -66,9 +66,7 @@ pub struct SpellCheckerApp {
     stats: CheckStats,
     language_manager: LanguageManager,
     analysis: Option<DocumentAnalysis>,
-    pending_add_word: Option<String>,
-    pending_ignore_word: Option<String>,
-    pending_replace: Option<(String, String)>,
+    // Removed unused fields: pending_add_word, pending_ignore_word, pending_replace
 }
 
 #[derive(Default)]
@@ -109,9 +107,7 @@ impl SpellCheckerApp {
             stats: CheckStats::default(),
             language_manager,
             analysis: None,
-            pending_add_word: None,
-            pending_ignore_word: None,
-            pending_replace: None,
+            // Removed unused fields initialization
         }
     }
     
@@ -561,7 +557,7 @@ impl SpellCheckerApp {
                         &mut pending_replace,
                     );
                     
-                    // Handle pending actions
+                    // Handle pending actions immediately (not storing in struct fields)
                     if let Some(word) = pending_add_word {
                         if let Ok(mut checker) = self.spell_checker.lock() {
                             if let Err(e) = checker.add_word_to_dictionary(&word) {
