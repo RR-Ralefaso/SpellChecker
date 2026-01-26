@@ -29,7 +29,7 @@ A modern, multilingual spell checker with a beautiful Atom IDE-inspired interfac
 - Auto-detect 🌐
 
 ## Testers
-    - **[Minenhle Majozi](mailto:Minenhlemajozi11@gmail.com)**
+-**[Minenhle Majozi](mailto:Minenhlemajozi11@gmail.com)**
 
 ## Installation
 
