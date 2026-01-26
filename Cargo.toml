@@ -1,6 +1,52 @@
 [package]
-name = "SpellChecker"
+name = "spell_checker"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+authors = ["Rothang Ralph Ralefaso <rrralefaso@outlook.com>"]
+description = "An Atom IDE-inspired multilingual spell checker"
+repository = "https://github.com/yourusername/spell_checker"
+license = "MIT"
+readme = "README.md"
+
+[features]
+default = ["gui"]
+cli = ["clap", "colored"]
+gui = ["eframe", "egui", "rfd"]
+
+[[bin]]
+name = "spell_checker"
+path = "src/main.rs"
+
+[[bin]]
+name = "spell_checker_cli"
+path = "src/cli.rs"
+required-features = ["cli"]
+
+[lib]
+name = "spell_checker"
+path = "src/lib.rs"
 
 [dependencies]
+# GUI dependencies
+eframe = { version = "0.26", optional = true }
+egui = { version = "0.26", optional = true }
+rfd = { version = "0.13", optional = true }
+egui_extras = { version = "0.26", optional = true }
+
+# Core functionality
+rayon = "1.8.0"
+regex = "1.10.0"
+walkdir = "2.4.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+thiserror = "1.0"
+lru = "0.12.0"
+dashmap = "5.5.3"
+unic-langid = "0.9.1"  # For language identification
+encoding_rs = "0.8.33" # For text encoding detection
+
+# CLI dependencies
+clap = { version = "4.4", optional = true }
+colored = { version = "2.1", optional = true }
+indicatif = { version = "0.17", optional = true }
