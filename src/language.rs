@@ -126,7 +126,8 @@ impl Language {
         match self {
             Language::AutoDetect => None,
             Language::Custom(_) => None,
-            _ => Some(format!("dictionary({}).txt", self.code())),
+            //HIGHLIGHT
+            _ => Some(format!("dictionary/dictionary({}).txt", self.code())),
         }
     }
     
