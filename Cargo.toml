@@ -1,7 +1,7 @@
 [package]
 name = "spellchecker"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 authors = ["Rothang Ralph Ralefaso <rrralefaso@outlook.com>"]
 description = "An Atom IDE-inspired multilingual spell checker"
 repository = "https://github.com/RR-Ralefaso/SpellChecker"
@@ -28,7 +28,7 @@ path = "src/lib.rs"
 
 [dependencies]
 # GUI dependencies
-eframe = { version = "0.27", features = ["persistence", "web_sys"], optional = true }
+eframe = { version = "0.27", features = ["persistence"], optional = true }
 egui = { version = "0.27", optional = true }
 rfd = { version = "0.14", optional = true }
 egui_extras = { version = "0.27", optional = true }
@@ -48,7 +48,7 @@ encoding_rs = "0.8.33"
 once_cell = "1.19.0"
 parking_lot = "0.12.3"
 directories = "5.0"
-open = "5.0.0"  # NEW: For opening URLs
+open = "5.0.0"
 
 # CLI dependencies
 clap = { version = "4.5", optional = true, features = ["derive"] }
