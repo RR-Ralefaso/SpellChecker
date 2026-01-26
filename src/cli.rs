@@ -26,7 +26,7 @@ enum Commands {
         /// Input file to check
         file: PathBuf,
         
-        /// Language to use
+        /// Language to use (eng, afr, fra, etc.)
         #[arg(short, long, default_value = "eng")]
         language: String,
         
@@ -37,6 +37,10 @@ enum Commands {
         /// Show statistics
         #[arg(long)]
         stats: bool,
+        
+        /// Case sensitive checking
+        #[arg(short = 'c', long)]
+        case_sensitive: bool,
     },
     
     /// Analyze word frequency
@@ -47,6 +51,10 @@ enum Commands {
         /// Number of top words to show
         #[arg(short, long, default_value_t = 10)]
         top: usize,
+        
+        /// Language for word extraction
+        #[arg(short, long, default_value = "eng")]
+        language: String,
     },
     
     /// Create a dictionary from a text file
@@ -58,8 +66,19 @@ enum Commands {
         output: PathBuf,
         
         /// Language code
-        #[arg(short, long)]
+        #[arg(short, long, default_value = "eng")]
         lang: String,
+    },
+    
+    /// Check spelling from stdin
+    Stdin {
+        /// Language to use
+        #[arg(short, long, default_value = "eng")]
+        language: String,
+        
+        /// Output suggestions
+        #[arg(short, long)]
+        suggest: bool,
     },
 }
 
@@ -68,72 +87,88 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     
     match cli.command {
-        Commands::Check { file, language, suggest, stats } => {
+        Commands::Check { file, language, suggest, stats, case_sensitive } => {
             let content = std::fs::read_to_string(&file)?;
             let language = Language::from_code(&language);
             
-            println!("Checking '{}' in {}...", file.display(), language.name());
+            println!("{}", format!("Checking '{}' in {}...", file.display(), language.name()).bold());
+            println!("{}", "-".repeat(50));
             
             let mut checker = SpellChecker::new(language)?;
             checker.enable_suggestions(suggest);
+            checker.set_case_sensitive(case_sensitive);
             
             let analysis = checker.check_document(&content);
             
-            println!("\n{}", "Results:".bold());
-            println!("  Total words: {}", analysis.total_words);
-            println!("  Misspelled: {}", analysis.misspelled_words);
-            println!("  Accuracy: {:.1}%", analysis.accuracy);
+            // Print results
+            println!("\n{}", "Results:".bold().underline());
+            println!("  📊 Total words: {}", analysis.total_words);
+            println!("  ❌ Misspelled: {}", analysis.misspelled_words);
+            println!("  ✅ Accuracy: {:.1}%", analysis.accuracy);
+            println!("  ⚡ Check time: {}ms", analysis.check_duration_ms);
             
             if analysis.misspelled_words > 0 {
-                println!("\n{}", "Errors found:".red().bold());
+                println!("\n{}", "Errors found:".red().bold().underline());
                 for word in analysis.words.iter().filter(|w| !w.is_correct) {
-                    println!("  Line {}: '{}'", word.line, word.word.red());
+                    println!("\n  Line {}: '{}'", word.line, word.word.red().bold());
                     if suggest && !word.suggestions.is_empty() {
-                        println!("    Suggestions: {}", word.suggestions.join(", ").green());
+                        println!("    💡 Suggestions: {}", word.suggestions.join(", ").green());
                     }
                 }
-            } else {
+                println!("\n{}", format!("Total errors: {}", analysis.misspelled_words).red());
+            } else if analysis.total_words > 0 {
                 println!("\n{}", "✓ No spelling errors found!".green().bold());
             }
             
             if stats {
                 let reading_time = reading_time(&content);
-                let freq = word_frequency(&content);
+                let is_cjk = matches!(language, Language::Chinese | Language::Japanese | Language::Korean);
+                let freq = word_frequency(&content, is_cjk);
                 let common = most_common_words(&freq, 5);
                 
-                println!("\n{}", "Additional statistics:".bold());
-                println!("  Reading time: {} min {} sec", reading_time.0, reading_time.1);
-                println!("  Unique words: {}", freq.len());
-                println!("  Most common words:");
+                println!("\n{}", "Statistics:".bold().underline());
+                println!("  ⏱️  Reading time: {} min {} sec", reading_time.0, reading_time.1);
+                println!("  🔤 Unique words: {}", freq.len());
+                println!("  📈 Most common words:");
                 for (word, count) in common {
-                    println!("    {}: {}", word, count);
+                    println!("    • {}: {}", word.cyan(), count);
                 }
+                println!("  📚 Dictionary size: {} words", checker.word_count());
             }
         }
         
-        Commands::Frequency { file, top } => {
+        Commands::Frequency { file, top, language } => {
             let content = std::fs::read_to_string(&file)?;
-            let freq = word_frequency(&content);
+            let lang = Language::from_code(&language);
+            let is_cjk = matches!(lang, Language::Chinese | Language::Japanese | Language::Korean);
+            let freq = word_frequency(&content, is_cjk);
             let common = most_common_words(&freq, top);
             
-            println!("Top {} words in '{}':", top, file.display());
-            println!("{:-^40}", "");
-            println!("{:<20} {:>10}", "Word", "Frequency");
-            println!("{:-^40}", "");
+            println!("{}", format!("Top {} words in '{}':", top, file.display()).bold());
+            println!("{}", "=".repeat(50));
+            println!("{:<25} {:>15}", "Word", "Frequency");
+            println!("{}", "-".repeat(50));
             
             for (word, count) in common {
-                println!("{:<20} {:>10}", word, count);
+                println!("{:<25} {:>15}", word, count.to_string().yellow());
             }
             
             let total_words: usize = freq.values().sum();
-            println!("{:-^40}", "");
-            println!("Total unique words: {}", freq.len());
-            println!("Total word count: {}", total_words);
+            println!("{}", "=".repeat(50));
+            println!("{:<25} {:>15}", "Total unique words:", freq.len().to_string().green());
+            println!("{:<25} {:>15}", "Total word count:", total_words.to_string().green());
+            
+            if total_words > 0 {
+                let reading_time = reading_time(&content);
+                println!("{:<25} {:>15}", "Reading time:", format!("{}m {}s", reading_time.0, reading_time.1).blue());
+            }
         }
         
         Commands::CreateDict { input, output, lang } => {
             let content = std::fs::read_to_string(&input)?;
-            let words = extract_words(&content);
+            let language = Language::from_code(&lang);
+            let is_cjk = matches!(language, Language::Chinese | Language::Japanese | Language::Korean);
+            let words = extract_words(&content, is_cjk);
             let unique_words: std::collections::HashSet<_> = words.into_iter().collect();
             
             let pb = ProgressBar::new(unique_words.len() as u64);
@@ -154,7 +189,45 @@ fn main() -> anyhow::Result<()> {
             std::fs::write(&output, dict_content)?;
             pb.finish_with_message("Dictionary created!");
             
-            println!("Created dictionary '{}' with {} words", output.display(), unique_words.len());
+            println!("✅ Created dictionary '{}'", output.display());
+            println!("   Language: {}", language.name());
+            println!("   Words: {}", unique_words.len());
+            println!("   Source: {}", input.display());
+        }
+        
+        Commands::Stdin { language, suggest } => {
+            use std::io::{self, Read};
+            
+            let mut content = String::new();
+            io::stdin().read_to_string(&mut content)?;
+            
+            if content.trim().is_empty() {
+                eprintln!("No input provided");
+                return Ok(());
+            }
+            
+            let language = Language::from_code(&language);
+            let mut checker = SpellChecker::new(language)?;
+            checker.enable_suggestions(suggest);
+            
+            let analysis = checker.check_document(&content);
+            
+            println!("{}", "Spell Check Results:".bold());
+            println!("Language: {}", language.name());
+            println!("Words checked: {}", analysis.total_words);
+            println!("Errors found: {}", analysis.misspelled_words);
+            println!("Accuracy: {:.1}%", analysis.accuracy);
+            
+            if analysis.misspelled_words > 0 {
+                println!("\nErrors:");
+                for word in analysis.words.iter().filter(|w| !w.is_correct) {
+                    print!("Line {}: '{}'", word.line, word.word.red());
+                    if suggest && !word.suggestions.is_empty() {
+                        print!(" → {}", word.suggestions.join(", ").green());
+                    }
+                    println!();
+                }
+            }
         }
     }
     
@@ -164,4 +237,6 @@ fn main() -> anyhow::Result<()> {
 #[cfg(not(feature = "cli"))]
 fn main() {
     println!("CLI feature not enabled. Build with --features cli");
+    println!("Example: cargo build --features cli");
+    println!("Or: cargo run --bin spellchecker_cli --features cli -- [args]");
 }

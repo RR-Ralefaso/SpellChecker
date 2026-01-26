@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use once_cell::sync::Lazy;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Language {
     English,
     Afrikaans,
@@ -17,37 +17,6 @@ pub enum Language {
     Japanese,
     Korean,
     AutoDetect,
-    Custom(&'static str),
-}
-
-// Manual Serialize implementation to handle Custom variant
-impl Serialize for Language {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        match self {
-            Language::Custom(code) => serializer.serialize_str(&format!("custom:{}", code)),
-            _ => serializer.serialize_str(self.code()),
-        }
-    }
-}
-
-// Manual Deserialize implementation
-impl<'de> Deserialize<'de> for Language {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let s = String::deserialize(deserializer)?;
-        if s.starts_with("custom:") {
-            let code = s.trim_start_matches("custom:");
-            let static_str: &'static str = Box::leak(code.to_string().into_boxed_str());
-            Ok(Language::Custom(static_str))
-        } else {
-            Ok(Language::from_code(&s))
-        }
-    }
 }
 
 impl Language {
@@ -82,7 +51,6 @@ impl Language {
             Language::Japanese => "jpn",
             Language::Korean => "kor",
             Language::AutoDetect => "auto",
-            Language::Custom(code) => code,
         }
     }
     
@@ -100,7 +68,6 @@ impl Language {
             Language::Japanese => "Japanese",
             Language::Korean => "Korean",
             Language::AutoDetect => "Auto-detect",
-            Language::Custom(code) => code,
         }
     }
     
@@ -118,146 +85,149 @@ impl Language {
             Language::Japanese => "🇯🇵",
             Language::Korean => "🇰🇷",
             Language::AutoDetect => "🌐",
-            Language::Custom(_) => "⚙️",
         }
     }
     
     pub fn dictionary_filename(&self) -> Option<String> {
         match self {
             Language::AutoDetect => None,
-            Language::Custom(_) => None,
-            //HIGHLIGHT
-            _ => Some(format!("dictionary/dictionary({}).txt", self.code())),
+            _ => Some(format!("dictionary({}).txt", self.code())),
         }
     }
     
     pub fn from_code(code: &str) -> Self {
         match code.to_lowercase().as_str() {
-            "eng" | "en" => Language::English,
-            "afr" | "af" => Language::Afrikaans,
-            "fra" | "fr" => Language::French,
-            "spa" | "es" => Language::Spanish,
-            "deu" | "de" => Language::German,
-            "zho" | "zh" => Language::Chinese,
-            "ita" | "it" => Language::Italian,
-            "por" | "pt" => Language::Portuguese,
-            "rus" | "ru" => Language::Russian,
-            "jpn" | "ja" => Language::Japanese,
-            "kor" | "ko" => Language::Korean,
-            "auto" => Language::AutoDetect,
-            custom => {
-                // Create a static string for custom language codes
-                let static_str: &'static str = Box::leak(custom.to_string().into_boxed_str());
-                Language::Custom(static_str)
-            }
+            "eng" | "en" | "english" => Language::English,
+            "afr" | "af" | "afrikaans" => Language::Afrikaans,
+            "fra" | "fr" | "french" => Language::French,
+            "spa" | "es" | "spanish" => Language::Spanish,
+            "deu" | "de" | "german" => Language::German,
+            "zho" | "zh" | "chinese" => Language::Chinese,
+            "ita" | "it" | "italian" => Language::Italian,
+            "por" | "pt" | "portuguese" => Language::Portuguese,
+            "rus" | "ru" | "russian" => Language::Russian,
+            "jpn" | "ja" | "japanese" => Language::Japanese,
+            "kor" | "ko" | "korean" => Language::Korean,
+            "auto" | "autodetect" => Language::AutoDetect,
+            _ => Language::English, // Default fallback
         }
     }
     
     pub fn detect_from_text(text: &str) -> Vec<(Language, f32)> {
         static COMMON_WORDS: Lazy<HashMap<Language, Vec<&'static str>>> = Lazy::new(|| {
             let mut map = HashMap::new();
+            
+            // English common words
             map.insert(Language::English, vec![
                 "the", "and", "that", "have", "for", "with", "this", "from", "they", "would",
+                "will", "what", "there", "their", "about", "which", "when", "who", "them",
+                "some", "time", "could", "people", "other", "than", "then", "now", "look",
+                "only", "come", "its", "over", "think", "also", "back", "after", "use",
+                "two", "how", "our", "work", "first", "well", "way", "even", "new", "want"
             ]);
+            
+            // Afrikaans common words
             map.insert(Language::Afrikaans, vec![
                 "die", "en", "het", "vir", "om", "wat", "in", "is", "jy", "ek",
+                "nie", "sy", "ons", "hulle", "daar", "maar", "my", "haar", "so", "by",
+                "kan", "van", "dit", "te", "met", "hy", "was", "op", "een", "nie",
+                "toe", "gaan", "moet", "nog", "al", "uit", "sê", "moet", "baie", "hier",
+                "wees", "gewees", "het", "word", "waar", "kom", "laat", "dink", "sien", "nous"
             ]);
+            
+            // French common words
             map.insert(Language::French, vec![
                 "le", "la", "et", "que", "dans", "un", "est", "pour", "des", "les",
+                "une", "pas", "son", "avec", "il", "elle", "dans", "qui", "mais", "nous",
+                "vous", "ce", "se", "aux", "du", "de", "par", "sur", "est", "sont",
+                "cette", "été", "plus", "pouvoir", "comme", "tout", "faire", "me", "même",
+                "sans", "autre", "aussi", "bien", "si", "y", "ou", "où", "lui", "donc"
             ]);
-            map.insert(Language::Spanish, vec![
-                "el", "la", "que", "y", "en", "los", "se", "del", "las", "un",
-            ]);
-            map.insert(Language::German, vec![
-                "der", "die", "das", "und", "den", "dem", "des", "ein", "eine", "einer",
-            ]);
-            map.insert(Language::Chinese, vec![
-                "的", "是", "在", "了", "和", "有", "人", "这", "中", "大",
-            ]);
-            map.insert(Language::Italian, vec![
-                "il", "la", "che", "e", "di", "in", "un", "una", "per", "con",
-            ]);
-            map.insert(Language::Portuguese, vec![
-                "o", "a", "e", "que", "do", "da", "em", "um", "para", "com",
-            ]);
-            map.insert(Language::Russian, vec![
-                "и", "в", "не", "на", "я", "что", "он", "с", "как", "все",
-            ]);
-            map.insert(Language::Japanese, vec![
-                "の", "に", "を", "は", "が", "と", "で", "た", "し", "て",
-            ]);
-            map.insert(Language::Korean, vec![
-                "이", "가", "을", "를", "은", "는", "에", "의", "고", "하다",
-            ]);
+            
+            // Add more languages as needed...
             map
         });
         
         let text_lower = text.to_lowercase();
         let words: Vec<&str> = text_lower.split_whitespace().collect();
-        let total_words = words.len().max(1);
+        
+        if words.len() < 3 {
+            // Not enough text to detect language reliably
+            return vec![(Language::English, 100.0)];
+        }
         
         let mut scores = HashMap::new();
         
+        // Check for each language
         for (language, common_words) in COMMON_WORDS.iter() {
-            let mut score = 0.0;
-            
-            // Check for common words
-            for word in common_words {
-                if text_lower.contains(word) {
-                    score += 5.0;
-                }
-            }
-            
-            // Count occurrences of common words
             let mut matches = 0;
-            for word in words.iter().take(100) { // Check first 100 words
+            let mut total_checked = 0;
+            
+            // Check first 50 words for common words
+            for word in words.iter().take(50) {
+                total_checked += 1;
                 if common_words.contains(word) {
                     matches += 1;
                 }
             }
             
-            score += (matches as f32 / total_words as f32) * 50.0;
-            
-            if score > 0.0 {
-                scores.insert(*language, score);
+            if total_checked > 0 {
+                let score = (matches as f32 / total_checked as f32) * 100.0;
+                if score > 10.0 { // Only include if we have reasonable confidence
+                    scores.insert(*language, score);
+                }
             }
         }
         
-        // Character-based detection for CJK
-        let cjk_count = text.chars().filter(|c| {
-            let c = *c;
-            ('\u{4E00}' <= c && c <= '\u{9FFF}') || // Chinese
-            ('\u{3040}' <= c && c <= '\u{309F}') || // Hiragana
-            ('\u{30A0}' <= c && c <= '\u{30FF}') || // Katakana
-            ('\u{AC00}' <= c && c <= '\u{D7AF}')    // Hangul
-        }).count();
+        // Check for CJK characters
+        let cjk_chars: Vec<char> = text.chars()
+            .filter(|c| {
+                ('\u{4E00}' <= *c && *c <= '\u{9FFF}') || // Chinese
+                ('\u{3040}' <= *c && *c <= '\u{309F}') || // Hiragana
+                ('\u{30A0}' <= *c && *c <= '\u{30FF}') || // Katakana
+                ('\u{AC00}' <= *c && *c <= '\u{D7AF}')    // Hangul
+            })
+            .collect();
         
-        let cjk_ratio = cjk_count as f32 / text.chars().count().max(1) as f32;
+        let cjk_ratio = cjk_chars.len() as f32 / text.chars().count().max(1) as f32;
         
         if cjk_ratio > 0.3 {
-            if text.contains('\u{4E00}') { // Chinese character range
+            if text.contains('\u{4E00}') { // Chinese
                 scores.insert(Language::Chinese, 100.0);
-            } else if text.contains('\u{3040}') { // Hiragana
+            } else if text.contains('\u{3040}') || text.contains('\u{30A0}') { // Japanese
                 scores.insert(Language::Japanese, 100.0);
-            } else if text.contains('\u{AC00}') { // Hangul
+            } else if text.contains('\u{AC00}') { // Korean
                 scores.insert(Language::Korean, 100.0);
             }
         }
         
-        // Sort by score
+        // If no language detected with confidence, default to English
+        if scores.is_empty() {
+            scores.insert(Language::English, 80.0);
+        }
+        
+        // Sort by score (highest first)
         let mut sorted_scores: Vec<(Language, f32)> = scores.into_iter().collect();
         sorted_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         
+        // Keep top 3
         sorted_scores.truncate(3);
         sorted_scores
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LanguageManager {
     available_languages: Vec<Language>,
     current_language: Language,
-    custom_dictionaries: HashMap<String, PathBuf>,
+    #[serde(skip)]
+    dictionary_paths: HashMap<Language, PathBuf>,
+}
+
+impl Default for LanguageManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl LanguageManager {
@@ -265,7 +235,7 @@ impl LanguageManager {
         let mut manager = Self {
             available_languages: Language::all(),
             current_language: Language::English,
-            custom_dictionaries: HashMap::new(),
+            dictionary_paths: HashMap::new(),
         };
         
         // Scan for available dictionary files
@@ -275,57 +245,91 @@ impl LanguageManager {
     }
     
     fn scan_dictionaries(&mut self) {
-        let dict_dir = Self::dictionary_dir();
+        // Check in multiple locations
+        let locations = vec![
+            PathBuf::from("src/dictionary"), // Project directory
+            PathBuf::from("dictionary"),     // Alternative location
+            Self::system_dict_dir(),         // System directory
+        ];
         
-        if let Ok(entries) = std::fs::read_dir(&dict_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
-                        // Check for dictionary(lang).txt pattern
-                        if let Some(lang_code) = filename
-                            .strip_prefix("dictionary(")
-                            .and_then(|s| s.strip_suffix(").txt"))
-                        {
-                            let language = Language::from_code(lang_code);
-                            self.custom_dictionaries.insert(lang_code.to_string(), path);
-                            
-                            // Add to available languages if not already there
-                            if !self.available_languages.contains(&language) {
-                                self.available_languages.push(language);
+        for location in locations {
+            if let Ok(entries) = std::fs::read_dir(&location) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("txt") {
+                        if let Some(filename) = path.file_stem().and_then(|n| n.to_str()) {
+                            // Check for dictionary(lang) pattern
+                            if let Some(lang_code) = filename
+                                .strip_prefix("dictionary(")
+                                .and_then(|s| s.strip_suffix(")"))
+                            {
+                                let language = Language::from_code(lang_code);
+                                self.dictionary_paths.insert(language, path.clone());
+                                
+                                println!("Found dictionary: {:?} -> {:?}", language.name(), path);
                             }
                         }
                     }
                 }
             }
         }
-        
-        // Sort languages by name
-        self.available_languages.sort_by_key(|l| l.name().to_string());
     }
     
     pub fn dictionary_dir() -> PathBuf {
-        let mut path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-        path.push("src");
-        path.push("dictionary");
+        // First check project directory
+        let project_path = PathBuf::from("src/dictionary");
+        if project_path.exists() {
+            return project_path;
+        }
+        
+        // Fallback to current directory
+        PathBuf::from(".")
+    }
+    
+    pub fn system_dict_dir() -> PathBuf {
+        // Use directories crate to find system data directory
+        directories::ProjectDirs::from("com", "ralefaso", "AtomSpell")
+            .map(|dirs| dirs.data_dir().to_path_buf())
+            .unwrap_or_else(|| PathBuf::from("."))
+    }
+    
+    pub fn user_dict_dir() -> PathBuf {
+        // Create user dictionary directory if it doesn't exist
+        let mut path = Self::system_dict_dir();
+        path.push("user_dictionaries");
+        std::fs::create_dir_all(&path).ok();
         path
     }
     
     pub fn get_dictionary_path(&self, language: &Language) -> Option<PathBuf> {
         match language {
-            Language::Custom(code) => self.custom_dictionaries.get(*code).cloned(),
+            Language::AutoDetect => None,
             lang => {
-                if let Some(filename) = lang.dictionary_filename() {
-                    let mut path = Self::dictionary_dir();
-                    path.push(filename);
+                // Check if we already have path cached
+                if let Some(path) = self.dictionary_paths.get(lang) {
                     if path.exists() {
-                        Some(path)
-                    } else {
-                        None
+                        return Some(path.clone());
                     }
-                } else {
-                    None
                 }
+                
+                // Try to find dictionary file
+                if let Some(filename) = lang.dictionary_filename() {
+                    // Check in multiple locations
+                    let locations = vec![
+                        Self::dictionary_dir().join(&filename),
+                        PathBuf::from("src/dictionary").join(&filename),
+                        PathBuf::from("dictionary").join(&filename),
+                        Self::user_dict_dir().join(&filename),
+                    ];
+                    
+                    for path in locations {
+                        if path.exists() {
+                            return Some(path);
+                        }
+                    }
+                }
+                
+                None
             }
         }
     }
@@ -334,21 +338,16 @@ impl LanguageManager {
         self.current_language = language;
     }
     
-    pub fn current_language(&self) -> &Language {
-        &self.current_language
+    pub fn current_language(&self) -> Language {
+        self.current_language
     }
     
     pub fn available_languages(&self) -> &[Language] {
         &self.available_languages
     }
     
-    pub fn add_custom_dictionary(&mut self, path: PathBuf, language_code: String) {
-        self.custom_dictionaries.insert(language_code.clone(), path);
-        let language = Language::from_code(&language_code);
-        
-        if !self.available_languages.contains(&language) {
-            self.available_languages.push(language);
-        }
+    pub fn add_custom_dictionary(&mut self, path: PathBuf, language: Language) {
+        self.dictionary_paths.insert(language, path);
     }
     
     pub fn detect_language(&self, text: &str) -> Language {
@@ -359,7 +358,7 @@ impl LanguageManager {
         let scores = Language::detect_from_text(text);
         
         if let Some((detected_lang, score)) = scores.first() {
-            if *score > 20.0 {
+            if *score > 25.0 {
                 return *detected_lang;
             }
         }

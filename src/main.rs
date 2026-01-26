@@ -4,17 +4,25 @@ use eframe::egui;
 use spellchecker::gui::SpellCheckerApp;
 
 fn main() -> Result<(), eframe::Error> {
+    // Set up native options
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1200.0, 800.0])
             .with_min_inner_size([800.0, 600.0])
             .with_title("AtomSpell - Atom IDE Inspired Spell Checker")
             .with_icon(
-                // Note: This requires an icon file at assets/icons/icon.png
-                // If you don't have an icon, remove this line or create one
+                // Load icon from assets
                 eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icons/icon.png")[..])
-                     .unwrap()
+                    .unwrap_or_else(|| {
+                        // Fallback to a simple icon if file not found
+                        eprintln!("Warning: Could not load icon.png");
+                        eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icons/icon.png")[..])
+                            .unwrap_or_default()
+                    })
             ),
+        persist_window: true, // Save window position/size
+        persist_egui_memory: true, // Save UI state
+        centered: true,
         ..Default::default()
     };
     
@@ -22,7 +30,10 @@ fn main() -> Result<(), eframe::Error> {
         "AtomSpell",
         options,
         Box::new(|cc| {
-            // Configure visuals
+            // Restore previous state if available
+            let storage = cc.storage.unwrap();
+            
+            // Configure visuals with default dark theme
             cc.egui_ctx.set_visuals(egui::Visuals::dark());
             
             // Load custom font for Atom-like typography
@@ -39,10 +50,20 @@ fn main() -> Result<(), eframe::Error> {
                     .entry(egui::FontFamily::Monospace)
                     .or_default()
                     .insert(0, "FiraCode".to_owned());
+                    
+                // Also add to proportional font for UI elements
+                fonts
+                    .families
+                    .entry(egui::FontFamily::Proportional)
+                    .or_default()
+                    .push("FiraCode".to_owned());
+            } else {
+                eprintln!("Warning: Could not load FiraCode font. Using default font.");
             }
             
             cc.egui_ctx.set_fonts(fonts);
             
+            // Create and return the app
             Box::new(SpellCheckerApp::new(cc))
         }),
     )

@@ -1,8 +1,13 @@
 use crate::dictionary::{Dictionary, DictionaryManager};
 use crate::language::Language;
+use crate::util::{is_cjk_text, sanitize_word};
 use dashmap::DashMap;
 use rayon::prelude::*;
 use serde::Serialize;
+use std::collections::HashSet;
+use std::fs::{self, File};
+use std::io::Write;
+use std::path::Path;
 use std::sync::Arc;
 use std::cmp::min;
 
@@ -26,6 +31,7 @@ pub struct DocumentAnalysis {
     pub suggestions_count: usize,
     pub language: Language,
     pub lines_checked: usize,
+    pub check_duration_ms: u128,
 }
 
 pub struct SpellChecker {
@@ -35,6 +41,8 @@ pub struct SpellChecker {
     case_sensitive: bool,
     max_suggestions: usize,
     cache: Arc<DashMap<String, bool>>,
+    ignore_list: HashSet<String>,
+    user_dictionary_path: Option<String>,
 }
 
 impl SpellChecker {
@@ -42,7 +50,8 @@ impl SpellChecker {
         let dictionary_manager = DictionaryManager::new();
         
         // Try to load dictionary
-        if let Err(e) = dictionary_manager.get_dictionary(&language) {
+        let dict_result = dictionary_manager.get_dictionary(&language);
+        if let Err(e) = dict_result {
             eprintln!("Warning: Could not load dictionary for {}: {}", language.name(), e);
             // Continue with empty dictionary
         }
@@ -52,8 +61,10 @@ impl SpellChecker {
             current_language: language,
             suggestions_enabled: true,
             case_sensitive: false,
-            max_suggestions: 3,
+            max_suggestions: 5,
             cache: Arc::new(DashMap::new()),
+            ignore_list: HashSet::new(),
+            user_dictionary_path: None,
         })
     }
     
@@ -61,7 +72,7 @@ impl SpellChecker {
         if language != self.current_language {
             self.dictionary_manager.get_dictionary(&language)?;
             self.current_language = language;
-            self.cache.clear();
+            self.cache.clear(); // Clear cache when language changes
         }
         Ok(())
     }
@@ -75,6 +86,8 @@ impl SpellChecker {
     }
     
     pub fn check_document(&self, text: &str) -> DocumentAnalysis {
+        let start_time = std::time::Instant::now();
+        
         let dictionary = match self.get_current_dictionary() {
             Ok(dict) => dict,
             Err(_) => {
@@ -87,6 +100,7 @@ impl SpellChecker {
                     suggestions_count: 0,
                     language: self.current_language,
                     lines_checked: 0,
+                    check_duration_ms: 0,
                 };
             }
         };
@@ -98,14 +112,34 @@ impl SpellChecker {
         let mut total_words = 0;
         let mut misspelled_words = 0;
         
+        let is_cjk = matches!(self.current_language, Language::Chinese | Language::Japanese | Language::Korean);
+        
         for (line_idx, line) in lines.iter().enumerate() {
+            let line_num = line_idx + 1;
+            let mut line_offset = 0;
+            
             for mat in word_pattern.find_iter(line) {
                 let word = mat.as_str();
                 let start = mat.start();
                 let end = mat.end();
                 
+                // Skip if word is in ignore list
+                let word_lower = if is_cjk { word.to_string() } else { word.to_lowercase() };
+                if self.ignore_list.contains(&word_lower) {
+                    words.push(WordCheck {
+                        word: word.to_string(),
+                        start: line_offset + start,
+                        end: line_offset + end,
+                        is_correct: true,
+                        suggestions: Vec::new(),
+                        line: line_num,
+                        column: start + 1,
+                    });
+                    continue;
+                }
+                
                 // Check cache first
-                let cache_key = format!("{}_{}", self.current_language.code(), word.to_lowercase());
+                let cache_key = format!("{}_{}", self.current_language.code(), word_lower);
                 let is_correct = if let Some(cached) = self.cache.get(&cache_key) {
                     *cached
                 } else {
@@ -129,14 +163,16 @@ impl SpellChecker {
                 
                 words.push(WordCheck {
                     word: word.to_string(),
-                    start,
-                    end,
+                    start: line_offset + start,
+                    end: line_offset + end,
                     is_correct,
                     suggestions,
-                    line: line_idx + 1,
+                    line: line_num,
                     column: start + 1,
                 });
             }
+            
+            line_offset += line.len() + 1; // +1 for newline character
         }
         
         let accuracy = if total_words > 0 {
@@ -144,6 +180,8 @@ impl SpellChecker {
         } else {
             100.0
         };
+        
+        let check_duration = start_time.elapsed();
         
         DocumentAnalysis {
             total_words,
@@ -153,6 +191,7 @@ impl SpellChecker {
             suggestions_count,
             language: self.current_language,
             lines_checked: lines.len(),
+            check_duration_ms: check_duration.as_millis(),
         }
     }
     
@@ -165,19 +204,18 @@ impl SpellChecker {
         let word_lower = word.to_lowercase();
         let dict_words = dictionary.get_words();
         
-        // Early exit for common cases
+        // Early exit if word is already in dictionary
         if dict_words.contains(&word_lower) {
             return Vec::new();
         }
         
         // Limit the number of dictionary words to check for performance
-        let max_candidates = 1000;
+        let max_candidates = 2000;
         let candidates: Vec<&String> = dict_words.iter()
             .filter(|w| {
-                // Quick filter: similar length and first character
+                // Quick filter: similar length
                 let len_diff = (w.len() as isize - word_lower.len() as isize).abs();
-                len_diff <= 2 && 
-                w.chars().next() == word_lower.chars().next()
+                len_diff <= 3
             })
             .take(max_candidates)
             .collect();
@@ -188,7 +226,7 @@ impl SpellChecker {
                 let distance = self.edit_distance(&word_lower, dict_word);
                 (dict_word.clone(), distance)
             })
-            .filter(|(_, distance)| *distance <= 2)
+            .filter(|(_, distance)| *distance <= 2) // Only suggest words with edit distance <= 2
             .collect();
         
         suggestions.sort_by_key(|(_, distance)| *distance);
@@ -210,48 +248,84 @@ impl SpellChecker {
         if b_len == 0 { return a_len; }
         
         // Use small vectors for common cases
-        if a_len <= 64 && b_len <= 64 {
-            let mut prev_row: Vec<usize> = (0..=b_len).collect();
-            let mut curr_row = vec![0; b_len + 1];
+        let mut prev_row: Vec<usize> = (0..=b_len).collect();
+        let mut curr_row = vec![0; b_len + 1];
+        
+        let a_chars: Vec<char> = a.chars().collect();
+        let b_chars: Vec<char> = b.chars().collect();
+        
+        for i in 1..=a_len {
+            curr_row[0] = i;
             
-            let a_chars: Vec<char> = a.chars().collect();
-            let b_chars: Vec<char> = b.chars().collect();
-            
-            for i in 1..=a_len {
-                curr_row[0] = i;
-                
-                for j in 1..=b_len {
-                    let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
-                    curr_row[j] = min(
-                        min(prev_row[j] + 1, curr_row[j - 1] + 1),
-                        prev_row[j - 1] + cost
-                    );
-                }
-                
-                std::mem::swap(&mut prev_row, &mut curr_row);
+            for j in 1..=b_len {
+                let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+                curr_row[j] = min(
+                    min(prev_row[j] + 1, curr_row[j - 1] + 1),
+                    prev_row[j - 1] + cost
+                );
             }
             
-            prev_row[b_len]
-        } else {
-            // For longer strings, use a simpler approximation
-            let len_diff = (a_len as isize - b_len as isize).abs() as usize;
-            let common_chars = a.chars()
-                .zip(b.chars())
-                .filter(|(ca, cb)| ca == cb)
-                .count();
-            
-            len_diff + (min(a_len, b_len) - common_chars)
+            std::mem::swap(&mut prev_row, &mut curr_row);
         }
+        
+        prev_row[b_len]
     }
     
     pub fn add_word_to_dictionary(&mut self, word: &str) -> anyhow::Result<()> {
-        let cache_key = format!("{}_{}", self.current_language.code(), word.to_lowercase());
+        let sanitized = sanitize_word(word);
+        if sanitized.is_empty() {
+            return Ok(());
+        }
+        
+        // Update cache
+        let cache_key = format!("{}_{}", self.current_language.code(), sanitized.to_lowercase());
         self.cache.insert(cache_key, true);
         
-        // Update dictionary using DictionaryManager's public API
-        self.dictionary_manager.add_word_to_dictionary(word, self.current_language)?;
+        // Update ignore list (remove if present)
+        self.ignore_list.remove(&sanitized.to_lowercase());
+        
+        // Update dictionary
+        self.dictionary_manager.add_word_to_dictionary(&sanitized, self.current_language)?;
         
         Ok(())
+    }
+    
+    pub fn ignore_word(&mut self, word: &str) -> anyhow::Result<()> {
+        let sanitized = sanitize_word(word);
+        if !sanitized.is_empty() {
+            self.ignore_list.insert(sanitized.to_lowercase());
+        }
+        Ok(())
+    }
+    
+    pub fn clear_ignored_words(&mut self) {
+        self.ignore_list.clear();
+        self.cache.clear(); // Clear cache since ignore status changed
+    }
+    
+    pub fn import_dictionary(&self, path: &Path) -> anyhow::Result<()> {
+        // Read the file to detect language or use current language
+        let content = fs::read_to_string(path)?;
+        
+        // Try to detect language from content
+        let detected_language = self.dictionary_manager.detect_language(&content);
+        let language_to_use = if detected_language != Language::English {
+            detected_language
+        } else {
+            self.current_language
+        };
+        
+        // Import dictionary
+        self.dictionary_manager.import_dictionary(path, language_to_use)?;
+        
+        // Clear cache since dictionary changed
+        self.cache.clear();
+        
+        Ok(())
+    }
+    
+    pub fn export_dictionary(&self, path: &Path) -> anyhow::Result<()> {
+        self.dictionary_manager.export_dictionary(&self.current_language, path)
     }
     
     pub fn enable_suggestions(&mut self, enabled: bool) {
@@ -268,5 +342,9 @@ impl SpellChecker {
             Ok(dict) => dict.word_count(),
             Err(_) => 0,
         }
+    }
+    
+    pub fn ignored_word_count(&self) -> usize {
+        self.ignore_list.len()
     }
 }

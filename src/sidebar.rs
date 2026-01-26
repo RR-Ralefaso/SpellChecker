@@ -1,7 +1,7 @@
 use crate::checker::{DocumentAnalysis, SpellChecker};
 use eframe::egui;
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Sidebar {
     pub show_dictionary: bool,
     pub show_errors: bool,
@@ -16,12 +16,18 @@ pub struct Sidebar {
     pub visible: bool,
 }
 
+impl Default for Sidebar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Sidebar {
     pub fn new() -> Self {
         Self {
             show_dictionary: true,
-            show_errors: true,
-            show_stats: true,
+            show_errors: false,
+            show_stats: false,
             show_find: false,
             show_replace: false,
             selected_error_index: 0,
@@ -42,62 +48,35 @@ impl Sidebar {
         on_add_word: &mut Option<String>,
         on_ignore_word: &mut Option<String>,
         on_replace: &mut Option<(String, String)>,
+        on_import_dict: &mut bool,
+        on_export_dict: &mut bool,
+        on_clear_ignored: &mut bool,
     ) {
         ui.vertical(|ui| {
             // Tabs for different sidebar views
             ui.horizontal(|ui| {
-                if ui
-                    .selectable_label(self.show_dictionary, "📚 Dictionary")
-                    .clicked()
-                {
+                if ui.selectable_label(self.show_dictionary, "📚 Dictionary").clicked() {
+                    self.reset_tabs();
                     self.show_dictionary = true;
-                    self.show_errors = false;
-                    self.show_stats = false;
-                    self.show_find = false;
-                    self.show_replace = false;
                 }
                 
-                if ui
-                    .selectable_label(self.show_errors, "❌ Errors")
-                    .clicked()
-                {
-                    self.show_dictionary = false;
+                if ui.selectable_label(self.show_errors, "❌ Errors").clicked() {
+                    self.reset_tabs();
                     self.show_errors = true;
-                    self.show_stats = false;
-                    self.show_find = false;
-                    self.show_replace = false;
                 }
                 
-                if ui
-                    .selectable_label(self.show_stats, "📊 Stats")
-                    .clicked()
-                {
-                    self.show_dictionary = false;
-                    self.show_errors = false;
+                if ui.selectable_label(self.show_stats, "📊 Stats").clicked() {
+                    self.reset_tabs();
                     self.show_stats = true;
-                    self.show_find = false;
-                    self.show_replace = false;
                 }
                 
-                if ui
-                    .selectable_label(self.show_find, "🔍 Find")
-                    .clicked()
-                {
-                    self.show_dictionary = false;
-                    self.show_errors = false;
-                    self.show_stats = false;
+                if ui.selectable_label(self.show_find, "🔍 Find").clicked() {
+                    self.reset_tabs();
                     self.show_find = true;
-                    self.show_replace = false;
                 }
                 
-                if ui
-                    .selectable_label(self.show_replace, "🔄 Replace")
-                    .clicked()
-                {
-                    self.show_dictionary = false;
-                    self.show_errors = false;
-                    self.show_stats = false;
-                    self.show_find = false;
+                if ui.selectable_label(self.show_replace, "🔄 Replace").clicked() {
+                    self.reset_tabs();
                     self.show_replace = true;
                 }
             });
@@ -106,7 +85,8 @@ impl Sidebar {
             
             // Show selected view
             if self.show_dictionary {
-                self.show_dictionary_view(ui, spell_checker, on_add_word, on_ignore_word);
+                self.show_dictionary_view(ui, spell_checker, on_add_word, on_ignore_word, 
+                    on_import_dict, on_export_dict, on_clear_ignored);
             } else if self.show_errors {
                 self.show_errors_view(ui, analysis, on_replace);
             } else if self.show_stats {
@@ -119,12 +99,23 @@ impl Sidebar {
         });
     }
     
+    fn reset_tabs(&mut self) {
+        self.show_dictionary = false;
+        self.show_errors = false;
+        self.show_stats = false;
+        self.show_find = false;
+        self.show_replace = false;
+    }
+    
     fn show_dictionary_view(
         &mut self,
         ui: &mut egui::Ui,
         spell_checker: &SpellChecker,
         on_add_word: &mut Option<String>,
         on_ignore_word: &mut Option<String>,
+        on_import_dict: &mut bool,
+        on_export_dict: &mut bool,
+        on_clear_ignored: &mut bool,
     ) {
         ui.heading("Dictionary");
         
@@ -143,7 +134,7 @@ impl Sidebar {
         ui.separator();
         
         // Add word section
-        ui.heading("Add Word");
+        ui.heading("Add Word to Dictionary");
         ui.horizontal(|ui| {
             let mut new_word = String::new();
             let response = ui.text_edit_singleline(&mut new_word);
@@ -154,11 +145,12 @@ impl Sidebar {
                 *on_add_word = Some(new_word.clone());
             }
         });
+        ui.label("Adds word to user dictionary for current language");
         
         ui.separator();
         
         // Ignore word section
-        ui.heading("Ignore Word");
+        ui.heading("Ignore Word (Session Only)");
         ui.horizontal(|ui| {
             let mut ignore_word = String::new();
             let response = ui.text_edit_singleline(&mut ignore_word);
@@ -169,21 +161,29 @@ impl Sidebar {
                 *on_ignore_word = Some(ignore_word.clone());
             }
         });
+        ui.label("Ignores word only for current session");
         
         ui.separator();
         
         // Dictionary actions
-        ui.horizontal(|ui| {
-            if ui.button("🔄 Reload Dictionary").clicked() {
-                // TODO: Implement dictionary reload
-            }
+        ui.heading("Dictionary Management");
+        ui.horizontal_wrapped(|ui| {
             if ui.button("📥 Import Dictionary").clicked() {
-                // TODO: Implement dictionary import
+                *on_import_dict = true;
             }
             if ui.button("📤 Export Dictionary").clicked() {
-                // TODO: Implement dictionary export
+                *on_export_dict = true;
+            }
+            if ui.button("🗑️ Clear Ignored Words").clicked() {
+                *on_clear_ignored = true;
             }
         });
+        
+        ui.separator();
+        
+        // Help text
+        ui.label("ℹ️ Note: Added words are saved to user dictionary files.");
+        ui.label("Ignored words are only for the current session.");
     }
     
     fn show_errors_view(
@@ -210,10 +210,7 @@ impl Sidebar {
                         ui.colored_label(egui::Color32::RED, "✗");
                         
                         // Error word
-                        if ui
-                            .selectable_label(is_selected, &word.word)
-                            .clicked()
-                        {
+                        if ui.selectable_label(is_selected, &word.word).clicked() {
                             self.selected_error_index = idx;
                         }
                         
@@ -227,7 +224,7 @@ impl Sidebar {
                             ui.label("Suggestions:");
                             for suggestion in &word.suggestions {
                                 ui.horizontal(|ui| {
-                                    if ui.button("👉").clicked() {
+                                    if ui.button("Use").clicked() {
                                         *on_replace = Some((word.word.clone(), suggestion.clone()));
                                     }
                                     ui.label(suggestion);
@@ -245,8 +242,9 @@ impl Sidebar {
             ui.horizontal(|ui| {
                 ui.label(format!("Total errors: {}", analysis.misspelled_words));
                 if analysis.misspelled_words > 0 {
-                    if ui.button("▶️ Fix All").clicked() {
+                    if ui.button("▶️ Fix All with First Suggestion").clicked() {
                         // TODO: Implement fix all
+                        ui.label("Feature coming soon...");
                     }
                 }
             });
@@ -269,7 +267,7 @@ impl Sidebar {
                 ui.label("Accuracy:");
                 let gauge = egui::widgets::ProgressBar::new(analysis.accuracy / 100.0)
                     .show_percentage()
-                    .desired_width(100.0);
+                    .desired_width(150.0);
                 ui.add(gauge);
             });
             
@@ -284,7 +282,7 @@ impl Sidebar {
                     ui.label(format!("{}", analysis.total_words));
                     ui.end_row();
                     
-                    ui.label("Misspelled words:");
+                    ui.label("Misspelled:");
                     ui.colored_label(egui::Color32::RED, format!("{}", analysis.misspelled_words));
                     ui.end_row();
                     
@@ -292,7 +290,7 @@ impl Sidebar {
                     ui.label(format!("{:.1}%", analysis.accuracy));
                     ui.end_row();
                     
-                    ui.label("Suggestions generated:");
+                    ui.label("Suggestions:");
                     ui.label(format!("{}", analysis.suggestions_count));
                     ui.end_row();
                     
@@ -312,15 +310,15 @@ impl Sidebar {
                     ui.end_row();
                 });
             
-            // Word frequency chart (simplified)
-            ui.separator();
-            ui.heading("Word Frequency");
-            ui.label("Top 10 words:");
-            
-            // TODO: Implement actual word frequency analysis
-            ui.label("Feature coming soon...");
+            // Reading time
+            if analysis.total_words > 0 {
+                ui.separator();
+                let minutes = analysis.total_words / 200;
+                let seconds = ((analysis.total_words % 200) * 60) / 200;
+                ui.label(format!("Estimated reading time: {} min {} sec", minutes, seconds));
+            }
         } else {
-            ui.label("No statistics available.");
+            ui.label("No statistics available. Load a document first.");
         }
     }
     
@@ -332,7 +330,7 @@ impl Sidebar {
             ui.text_edit_singleline(&mut self.find_text);
             
             if ui.button("🔍").clicked() && !self.find_text.is_empty() {
-                // TODO: Implement find
+                // Find functionality would be implemented in the editor
             }
         });
         
@@ -345,7 +343,12 @@ impl Sidebar {
             } else {
                 content.to_lowercase().matches(&self.find_text.to_lowercase()).count()
             };
-            ui.label(format!("Found {} occurrences", count));
+            
+            if count > 0 {
+                ui.colored_label(egui::Color32::GREEN, format!("Found {} occurrences", count));
+            } else {
+                ui.colored_label(egui::Color32::RED, "No matches found");
+            }
         }
     }
     
@@ -372,6 +375,7 @@ impl Sidebar {
             
             if ui.button("Replace All").clicked() && !self.find_text.is_empty() {
                 // TODO: Implement replace all
+                ui.label("Replace All coming soon...");
             }
         });
         
