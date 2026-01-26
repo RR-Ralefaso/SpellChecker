@@ -1,5 +1,4 @@
 use crate::checker::{DocumentAnalysis, SpellChecker};
-use crate::language::Language;
 use eframe::egui;
 
 #[derive(Clone)]

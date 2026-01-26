@@ -53,11 +53,11 @@ impl Dictionary {
         });
         
         match language {
-            Language::Chinese | Language::Japanese => &CHINESE_PATTERN,
-            Language::Korean => &KOREAN_PATTERN,
-            Language::Russian => &RUSSIAN_PATTERN,
-            _ => &DEFAULT_PATTERN,
-        }.clone()
+            Language::Chinese | Language::Japanese => CHINESE_PATTERN.clone(),
+            Language::Korean => KOREAN_PATTERN.clone(),
+            Language::Russian => RUSSIAN_PATTERN.clone(),
+            _ => DEFAULT_PATTERN.clone(),
+        }
     }
     
     pub fn load(&mut self) -> anyhow::Result<()> {
@@ -241,6 +241,18 @@ impl DictionaryManager {
         dict.load_file(&path)?;
         
         self.dictionaries.insert(language, dict);
+        
+        Ok(())
+    }
+    
+    pub fn add_word_to_dictionary(&mut self, word: &str, language: Language) -> anyhow::Result<()> {
+        if let Some(mut dict) = self.dictionaries.get_mut(&language) {
+            dict.add_word(word);
+        } else {
+            let mut dict = Dictionary::new(language);
+            dict.add_word(word);
+            self.dictionaries.insert(language, dict);
+        }
         
         Ok(())
     }

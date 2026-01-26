@@ -70,12 +70,16 @@ impl TextEditor {
             *modified = true;
         }
         
-        // Update cursor position
+        // Update cursor position from text edit state
         if response.has_focus() {
-            if let Some(state) = ui.ctx().memory(|mem| 
+            if let Some(state) = ui.memory(|mem| 
                 mem.data.get_temp::<egui::text_edit::TextEditState>(response.id)
             ) {
-                self.cursor_pos = state.cursor.primary.ccursor.index;
+                // Get cursor position from the text edit state
+                let cursor_range = state.cursor_range();
+                if let Some(range) = cursor_range {
+                    self.cursor_pos = range.primary.index;
+                }
             }
         }
         

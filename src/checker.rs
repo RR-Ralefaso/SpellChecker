@@ -2,7 +2,6 @@ use crate::dictionary::{Dictionary, DictionaryManager};
 use crate::language::Language;
 use dashmap::DashMap;
 use rayon::prelude::*;
-use regex::Regex;
 use serde::Serialize;
 use std::sync::Arc;
 use std::cmp::min;
@@ -249,12 +248,8 @@ impl SpellChecker {
         let cache_key = format!("{}_{}", self.current_language.code(), word.to_lowercase());
         self.cache.insert(cache_key, true);
         
-        // Update dictionary
-        if let Ok(mut dict) = self.get_current_dictionary() {
-            dict.add_word(word);
-            // Re-insert updated dictionary
-            self.dictionary_manager.dictionaries.insert(self.current_language, dict);
-        }
+        // Update dictionary using DictionaryManager's public API
+        self.dictionary_manager.add_word_to_dictionary(word, self.current_language)?;
         
         Ok(())
     }

@@ -58,7 +58,7 @@ pub struct SpellCheckerApp {
     state: AppState,
     text_editor: TextEditor,
     sidebar: Sidebar,
-    spell_checker: Arc<SpellChecker>,
+    spell_checker: Arc<std::sync::Mutex<SpellChecker>>,
     last_check_time: Instant,
     check_interval: std::time::Duration,
     is_dragging_file: bool,
@@ -85,11 +85,13 @@ impl SpellCheckerApp {
         let language_manager = LanguageManager::new();
         
         let spell_checker = Arc::new(
-            SpellChecker::new(state.selected_language)
-                .unwrap_or_else(|e| {
-                    eprintln!("Failed to create spell checker: {}", e);
-                    SpellChecker::new(Language::English).unwrap()
-                })
+            std::sync::Mutex::new(
+                SpellChecker::new(state.selected_language)
+                    .unwrap_or_else(|e| {
+                        eprintln!("Failed to create spell checker: {}", e);
+                        SpellChecker::new(Language::English).unwrap()
+                    })
+            )
         );
         
         let mut text_editor = TextEditor::new();
@@ -130,15 +132,16 @@ impl SpellCheckerApp {
         };
         
         // Update spell checker language if changed
-        if language_to_use != self.spell_checker.current_language() {
-            if let Ok(mut checker) = Arc::get_mut(&mut self.spell_checker) {
+        if language_to_use != self.spell_checker.lock().unwrap().current_language() {
+            if let Ok(mut checker) = self.spell_checker.lock() {
                 if let Err(e) = checker.set_language(language_to_use) {
                     eprintln!("Failed to change language: {}", e);
                 }
             }
         }
         
-        self.analysis = Some(self.spell_checker.check_document(&self.state.document_content));
+        let checker = self.spell_checker.lock().unwrap();
+        self.analysis = Some(checker.check_document(&self.state.document_content));
         if let Some(analysis) = &self.analysis {
             self.stats.total_words = analysis.total_words;
             self.stats.errors = analysis.misspelled_words;
@@ -167,7 +170,7 @@ impl SpellCheckerApp {
         if self.state.auto_detect_language {
             let detected = self.language_manager.detect_language(&self.state.document_content);
             self.state.selected_language = detected;
-            if let Ok(mut checker) = Arc::get_mut(&mut self.spell_checker) {
+            if let Ok(mut checker) = self.spell_checker.lock() {
                 if let Err(e) = checker.set_language(detected) {
                     eprintln!("Failed to set language: {}", e);
                 }
@@ -271,9 +274,11 @@ impl SpellCheckerApp {
                 
                 ui.separator();
                 
-                if !self.state.recent_files.is_empty() {
+                // Make a copy of recent files to avoid borrowing issues
+                let recent_files = self.state.recent_files.clone();
+                if !recent_files.is_empty() {
                     ui.menu_button("Recent Files", |ui| {
-                        for path in &self.state.recent_files {
+                        for path in &recent_files {
                             if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
                                 if ui.button(format!("📄 {}", filename)).clicked() {
                                     if let Err(e) = self.open_file(path.clone()) {
@@ -308,7 +313,7 @@ impl SpellCheckerApp {
                     let detected = self.language_manager.detect_language(&self.state.document_content);
                     self.state.selected_language = detected;
                     self.state.auto_detect_language = false;
-                    if let Ok(mut checker) = Arc::get_mut(&mut self.spell_checker) {
+                    if let Ok(mut checker) = self.spell_checker.lock() {
                         if let Err(e) = checker.set_language(detected) {
                             eprintln!("Failed to set language: {}", e);
                         }
@@ -365,21 +370,27 @@ impl SpellCheckerApp {
             });
             
             ui.menu_button("Language", |ui| {
-                for lang in &self.state.available_languages {
+                // Make a copy of available languages to avoid borrowing issues
+                let available_languages = self.state.available_languages.clone();
+                let mut selected_language = self.state.selected_language;
+                let mut auto_detect = self.state.auto_detect_language;
+                
+                for lang in &available_languages {
                     if ui
                         .selectable_value(
-                            &mut self.state.selected_language,
+                            &mut selected_language,
                             *lang,
                             format!("{} {}", lang.flag_emoji(), lang.name()),
                         )
                         .clicked()
                     {
-                        if let Ok(mut checker) = Arc::get_mut(&mut self.spell_checker) {
+                        self.state.selected_language = selected_language;
+                        self.state.auto_detect_language = false;
+                        if let Ok(mut checker) = self.spell_checker.lock() {
                             if let Err(e) = checker.set_language(*lang) {
                                 eprintln!("Failed to change language: {}", e);
                             }
                         }
-                        self.state.auto_detect_language = false;
                         self.check_spelling();
                         ui.close_menu();
                     }
@@ -387,7 +398,9 @@ impl SpellCheckerApp {
                 
                 ui.separator();
                 
-                ui.checkbox(&mut self.state.auto_detect_language, "Auto-detect language");
+                if ui.checkbox(&mut auto_detect, "Auto-detect language").changed() {
+                    self.state.auto_detect_language = auto_detect;
+                }
             });
             
             ui.menu_button("Tools", |ui| {
@@ -435,19 +448,32 @@ impl SpellCheckerApp {
         ui.horizontal(|ui| {
             ui.label("🌍");
             
-            egui::ComboBox::from_id_salt("language_combo")
+            egui::ComboBox::from_id_source("language_combo")
                 .selected_text(format!(
                     "{} {}",
                     self.state.selected_language.flag_emoji(),
                     self.state.selected_language.name()
                 ))
-                .show_ui(ui, |ui| {
-                    for lang in &self.state.available_languages {
-                        ui.selectable_value(
-                            &mut self.state.selected_language,
+                .show_ui(ui, |ui: &mut egui::Ui| {
+                    // Make a copy to avoid borrowing issues
+                    let available_languages = self.state.available_languages.clone();
+                    let mut selected_language = self.state.selected_language;
+                    
+                    for lang in &available_languages {
+                        if ui.selectable_value(
+                            &mut selected_language,
                             *lang,
                             format!("{} {}", lang.flag_emoji(), lang.name()),
-                        );
+                        ).clicked() {
+                            self.state.selected_language = selected_language;
+                            self.state.auto_detect_language = false;
+                            if let Ok(mut checker) = self.spell_checker.lock() {
+                                if let Err(e) = checker.set_language(*lang) {
+                                    eprintln!("Failed to change language: {}", e);
+                                }
+                            }
+                            self.check_spelling();
+                        }
                     }
                 });
             
@@ -497,7 +523,8 @@ impl SpellCheckerApp {
                     ui.colored_label(egui::Color32::GREEN, "🔄 Auto");
                 }
                 
-                ui.label(format!("Dict: {}", self.spell_checker.word_count()));
+                let word_count = self.spell_checker.lock().unwrap().word_count();
+                ui.label(format!("Dict: {}", word_count));
                 
                 if self.state.auto_detect_language {
                     if let Some(detected) = self.stats.detected_language {
@@ -519,14 +546,14 @@ impl SpellCheckerApp {
                 .resizable(true)
                 .default_width(self.state.sidebar_width)
                 .width_range(200.0..=500.0)
-                .show(ui, |ui| {
+                .show_inside(ui, |ui| {
                     let mut pending_add_word = None;
                     let mut pending_ignore_word = None;
                     let mut pending_replace = None;
                     
                     self.sidebar.show(
                         ui,
-                        &self.spell_checker,
+                        &self.spell_checker.lock().unwrap(),
                         &self.analysis,
                         &self.state.document_content,
                         &mut pending_add_word,
@@ -536,7 +563,7 @@ impl SpellCheckerApp {
                     
                     // Handle pending actions
                     if let Some(word) = pending_add_word {
-                        if let Ok(mut checker) = Arc::get_mut(&mut self.spell_checker) {
+                        if let Ok(mut checker) = self.spell_checker.lock() {
                             if let Err(e) = checker.add_word_to_dictionary(&word) {
                                 eprintln!("Failed to add word: {}", e);
                             }
@@ -556,7 +583,7 @@ impl SpellCheckerApp {
                 });
         }
         
-        egui::CentralPanel::default().show(ui, |ui| {
+        egui::CentralPanel::default().show_inside(ui, |ui| {
             // Drop zone highlight
             if self.drop_highlight {
                 let rect = ui.available_rect_before_wrap();
@@ -607,7 +634,9 @@ impl eframe::App for SpellCheckerApp {
         });
         
         // Main content area
-        self.show_main_content(ctx);
+        egui::CentralPanel::default().show(ctx, |ui| {
+            self.show_main_content(ui);
+        });
         
         // Check for auto-check interval
         if self.state.auto_check && self.last_check_time.elapsed() > self.check_interval {

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use once_cell::sync::Lazy;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Language {
     English,
     Afrikaans,
@@ -18,6 +18,36 @@ pub enum Language {
     Korean,
     AutoDetect,
     Custom(&'static str),
+}
+
+// Manual Serialize implementation to handle Custom variant
+impl Serialize for Language {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            Language::Custom(code) => serializer.serialize_str(&format!("custom:{}", code)),
+            _ => serializer.serialize_str(self.code()),
+        }
+    }
+}
+
+// Manual Deserialize implementation
+impl<'de> Deserialize<'de> for Language {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        if s.starts_with("custom:") {
+            let code = s.trim_start_matches("custom:");
+            let static_str: &'static str = Box::leak(code.to_string().into_boxed_str());
+            Ok(Language::Custom(static_str))
+        } else {
+            Ok(Language::from_code(&s))
+        }
+    }
 }
 
 impl Language {
@@ -114,7 +144,11 @@ impl Language {
             "jpn" | "ja" => Language::Japanese,
             "kor" | "ko" => Language::Korean,
             "auto" => Language::AutoDetect,
-            custom => Language::Custom(Box::leak(custom.to_string().into_boxed_str())),
+            custom => {
+                // Create a static string for custom language codes
+                let static_str: &'static str = Box::leak(custom.to_string().into_boxed_str());
+                Language::Custom(static_str)
+            }
         }
     }
     
@@ -309,7 +343,7 @@ impl LanguageManager {
     
     pub fn add_custom_dictionary(&mut self, path: PathBuf, language_code: String) {
         self.custom_dictionaries.insert(language_code.clone(), path);
-        let language = Language::Custom(Box::leak(language_code.into_boxed_str()));
+        let language = Language::from_code(&language_code);
         
         if !self.available_languages.contains(&language) {
             self.available_languages.push(language);
