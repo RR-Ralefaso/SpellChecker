@@ -1,9 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use unic_langid::LanguageIdentifier;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Language {
     English,
     Afrikaans,
@@ -17,7 +16,7 @@ pub enum Language {
     Japanese,
     Korean,
     AutoDetect,
-    Custom(String),
+    Custom(&'static str),
 }
 
 impl Language {
@@ -101,84 +100,114 @@ impl Language {
     }
     
     pub fn from_code(code: &str) -> Self {
-        match code {
-            "eng" => Language::English,
-            "afr" => Language::Afrikaans,
-            "fra" => Language::French,
-            "spa" => Language::Spanish,
-            "deu" => Language::German,
-            "zho" => Language::Chinese,
-            "ita" => Language::Italian,
-            "por" => Language::Portuguese,
-            "rus" => Language::Russian,
-            "jpn" => Language::Japanese,
-            "kor" => Language::Korean,
+        match code.to_lowercase().as_str() {
+            "eng" | "en" => Language::English,
+            "afr" | "af" => Language::Afrikaans,
+            "fra" | "fr" => Language::French,
+            "spa" | "es" => Language::Spanish,
+            "deu" | "de" => Language::German,
+            "zho" | "zh" => Language::Chinese,
+            "ita" | "it" => Language::Italian,
+            "por" | "pt" => Language::Portuguese,
+            "rus" | "ru" => Language::Russian,
+            "jpn" | "ja" => Language::Japanese,
+            "kor" | "ko" => Language::Korean,
             "auto" => Language::AutoDetect,
-            custom => Language::Custom(custom.to_string()),
+            custom => Language::Custom(Box::leak(custom.to_string().into_boxed_str())),
         }
     }
     
     pub fn detect_from_text(text: &str) -> Vec<(Language, f32)> {
-        let mut scores = HashMap::new();
+        use once_cell::sync::Lazy;
+        use std::collections::HashMap;
         
-        // Common word detection for each language
-        let language_patterns = [
-            (Language::English, vec!["the", "and", "that", "have", "for"]),
-            (Language::Afrikaans, vec!["die", "en", "het", "vir", "om"]),
-            (Language::French, vec!["le", "la", "et", "que", "dans"]),
-            (Language::Spanish, vec!["el", "la", "que", "y", "en"]),
-            (Language::German, vec!["der", "die", "das", "und", "den"]),
-            (Language::Chinese, vec!["的", "是", "在", "了", "和"]),
-            (Language::Italian, vec!["il", "la", "che", "e", "di"]),
-            (Language::Portuguese, vec!["o", "a", "e", "que", "do"]),
-            (Language::Russian, vec!["и", "в", "не", "на", "я"]),
-            (Language::Japanese, vec!["の", "に", "を", "は", "が"]),
-            (Language::Korean, vec!["이", "가", "을", "를", "은"]),
-        ];
+        static COMMON_WORDS: Lazy<HashMap<Language, Vec<&'static str>>> = Lazy::new(|| {
+            let mut map = HashMap::new();
+            map.insert(Language::English, vec![
+                "the", "and", "that", "have", "for", "with", "this", "from", "they", "would",
+            ]);
+            map.insert(Language::Afrikaans, vec![
+                "die", "en", "het", "vir", "om", "wat", "in", "is", "jy", "ek",
+            ]);
+            map.insert(Language::French, vec![
+                "le", "la", "et", "que", "dans", "un", "est", "pour", "des", "les",
+            ]);
+            map.insert(Language::Spanish, vec![
+                "el", "la", "que", "y", "en", "los", "se", "del", "las", "un",
+            ]);
+            map.insert(Language::German, vec![
+                "der", "die", "das", "und", "den", "dem", "des", "ein", "eine", "einer",
+            ]);
+            map.insert(Language::Chinese, vec![
+                "的", "是", "在", "了", "和", "有", "人", "这", "中", "大",
+            ]);
+            map.insert(Language::Italian, vec![
+                "il", "la", "che", "e", "di", "in", "un", "una", "per", "con",
+            ]);
+            map.insert(Language::Portuguese, vec![
+                "o", "a", "e", "que", "do", "da", "em", "um", "para", "com",
+            ]);
+            map.insert(Language::Russian, vec![
+                "и", "в", "не", "на", "я", "что", "он", "с", "как", "все",
+            ]);
+            map.insert(Language::Japanese, vec![
+                "の", "に", "を", "は", "が", "と", "で", "た", "し", "て",
+            ]);
+            map.insert(Language::Korean, vec![
+                "이", "가", "을", "를", "은", "는", "에", "의", "고", "하다",
+            ]);
+            map
+        });
         
         let text_lower = text.to_lowercase();
-        let total_chars = text.chars().count().max(1);
+        let words: Vec<&str> = text_lower.split_whitespace().collect();
+        let total_words = words.len().max(1);
         
-        for (lang, patterns) in language_patterns {
+        let mut scores = HashMap::new();
+        
+        for (language, common_words) in COMMON_WORDS.iter() {
             let mut score = 0.0;
             
             // Check for common words
-            for pattern in patterns {
-                if text_lower.contains(pattern) {
-                    score += 10.0;
+            for word in common_words {
+                if text_lower.contains(word) {
+                    score += 5.0;
                 }
             }
             
-            // Character frequency analysis
-            let char_freq: HashMap<char, f32> = match lang {
-                Language::English => [('e', 12.7), ('t', 9.1), ('a', 8.2), ('o', 7.5), ('i', 7.0)]
-                    .iter()
-                    .map(|(c, freq)| (*c, *freq))
-                    .collect(),
-                Language::Afrikaans => [('e', 18.9), ('a', 7.2), ('i', 7.0), ('n', 6.9), ('r', 6.6)]
-                    .iter()
-                    .map(|(c, freq)| (*c, *freq))
-                    .collect(),
-                Language::French => [('e', 15.9), ('a', 8.4), ('i', 7.3), ('s', 7.3), ('n', 7.1)]
-                    .iter()
-                    .map(|(c, freq)| (*c, *freq))
-                    .collect(),
-                Language::German => [('e', 17.4), ('n', 10.5), ('i', 8.0), ('s', 7.6), ('r', 7.3)]
-                    .iter()
-                    .map(|(c, freq)| (*c, *freq))
-                    .collect(),
-                _ => HashMap::new(),
-            };
-            
-            for (ch, expected_freq) in char_freq {
-                let actual_count = text_lower.chars().filter(|&c| c == ch).count() as f32;
-                let actual_freq = (actual_count / total_chars as f32) * 100.0;
-                let freq_diff = (expected_freq - actual_freq).abs();
-                score += 5.0 / (freq_diff + 1.0);
+            // Count occurrences of common words
+            let mut matches = 0;
+            for word in words.iter().take(100) { // Check first 100 words
+                if common_words.contains(word) {
+                    matches += 1;
+                }
             }
             
+            score += (matches as f32 / total_words as f32) * 50.0;
+            
             if score > 0.0 {
-                scores.insert(lang, score);
+                scores.insert(*language, score);
+            }
+        }
+        
+        // Character-based detection for CJK
+        let cjk_count = text.chars().filter(|c| {
+            let c = *c;
+            ('\u{4E00}' <= c && c <= '\u{9FFF}') || // Chinese
+            ('\u{3040}' <= c && c <= '\u{309F}') || // Hiragana
+            ('\u{30A0}' <= c && c <= '\u{30FF}') || // Katakana
+            ('\u{AC00}' <= c && c <= '\u{D7AF}')    // Hangul
+        }).count();
+        
+        let cjk_ratio = cjk_count as f32 / text.chars().count().max(1) as f32;
+        
+        if cjk_ratio > 0.3 {
+            if text.contains('\u{4E00}') { // Chinese character range
+                scores.insert(Language::Chinese, 100.0);
+            } else if text.contains('\u{3040}') { // Hiragana
+                scores.insert(Language::Japanese, 100.0);
+            } else if text.contains('\u{AC00}') { // Hangul
+                scores.insert(Language::Korean, 100.0);
             }
         }
         
@@ -251,7 +280,7 @@ impl LanguageManager {
     
     pub fn get_dictionary_path(&self, language: &Language) -> Option<PathBuf> {
         match language {
-            Language::Custom(code) => self.custom_dictionaries.get(code).cloned(),
+            Language::Custom(code) => self.custom_dictionaries.get(*code).cloned(),
             lang => {
                 if let Some(filename) = lang.dictionary_filename() {
                     let mut path = Self::dictionary_dir();
@@ -282,7 +311,7 @@ impl LanguageManager {
     
     pub fn add_custom_dictionary(&mut self, path: PathBuf, language_code: String) {
         self.custom_dictionaries.insert(language_code.clone(), path);
-        let language = Language::Custom(language_code);
+        let language = Language::Custom(Box::leak(language_code.into_boxed_str()));
         
         if !self.available_languages.contains(&language) {
             self.available_languages.push(language);
@@ -297,7 +326,7 @@ impl LanguageManager {
         let scores = Language::detect_from_text(text);
         
         if let Some((detected_lang, score)) = scores.first() {
-            if *score > 15.0 {
+            if *score > 20.0 {
                 return *detected_lang;
             }
         }
