@@ -1,6 +1,5 @@
 use crate::checker::{DocumentAnalysis, WordCheck};
 use eframe::egui;
-use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct TextEditor {
@@ -8,8 +7,8 @@ pub struct TextEditor {
     font_size: f32,
     show_whitespace: bool,
     wrap_lines: bool,
-    char_width_cache: HashMap<char, f32>,
-    error_cache: HashMap<usize, WordCheck>,
+    char_width_cache: std::collections::HashMap<char, f32>,
+    error_cache: std::collections::HashMap<usize, WordCheck>,
     last_analysis: Option<DocumentAnalysis>,
 }
 
@@ -26,8 +25,8 @@ impl TextEditor {
             font_size: 14.0,
             show_whitespace: false,
             wrap_lines: true,
-            char_width_cache: HashMap::new(),
-            error_cache: HashMap::new(),
+            char_width_cache: std::collections::HashMap::new(),
+            error_cache: std::collections::HashMap::new(),
             last_analysis: None,
         }
     }
@@ -69,7 +68,7 @@ impl TextEditor {
         };
         
         // Create a custom widget for the editor
-        let (rect, response) = ui.allocate_exact_size(
+        let (rect, _response) = ui.allocate_exact_size(
             egui::vec2(available_rect.width(), available_rect.height()),
             egui::Sense::click_and_drag(),
         );
@@ -116,7 +115,7 @@ impl TextEditor {
     fn draw_line_numbers(&self, ui: &egui::Ui, rect: egui::Rect, content: &str) {
         let painter = ui.painter();
         let line_count = content.lines().count().max(1);
-        let line_number_color = ui.visuals().weak_text_color;
+        let line_number_color = ui.visuals().weak_text_color();
         
         for i in 0..line_count {
             let line_y = rect.top() + (i as f32 * self.line_height) + (self.line_height * 0.75);

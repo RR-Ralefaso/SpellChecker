@@ -3,7 +3,7 @@ use crate::editor::TextEditor;
 use crate::language::{Language, LanguageManager};
 use crate::sidebar::Sidebar;
 use crate::theme::AtomTheme;
-use crate::{get_app_info, open_repository, open_sponsor_page};
+use crate::{open_repository, open_sponsor_page};
 use eframe::egui;
 use rfd::FileDialog;
 use std::path::PathBuf;
@@ -164,20 +164,21 @@ impl SpellCheckerApp {
         }
         
         // Perform spell check
-        if let Ok(checker) = self.spell_checker.lock() {
-            self.analysis = Some(checker.check_document(&self.state.document_content));
-            if let Some(analysis) = &self.analysis {
-                self.stats.total_words = analysis.total_words;
-                self.stats.errors = analysis.misspelled_words;
-                self.stats.last_check_duration = start_time.elapsed();
-                self.stats.check_count += 1;
-                
-                // Update text editor with analysis for highlighting
-                self.text_editor.set_analysis(analysis.clone());
-                self.last_spell_check = Some(analysis.clone());
-                self.last_check_time = Instant::now();
-            }
-        }
+        let analysis = {
+            let checker = self.spell_checker.lock().unwrap();
+            checker.check_document(&self.state.document_content)
+        };
+        
+        self.analysis = Some(analysis.clone());
+        self.stats.total_words = analysis.total_words;
+        self.stats.errors = analysis.misspelled_words;
+        self.stats.last_check_duration = start_time.elapsed();
+        self.stats.check_count += 1;
+        
+        // Update text editor with analysis for highlighting
+        self.text_editor.set_analysis(analysis.clone());
+        self.last_spell_check = Some(analysis);
+        self.last_check_time = Instant::now();
     }
     
     fn open_file(&mut self, path: PathBuf) -> anyhow::Result<()> {
@@ -269,22 +270,24 @@ impl SpellCheckerApp {
     fn handle_pending_actions(&mut self) {
         // Handle adding words to dictionary
         if let Some(word) = self.pending_add_word.take() {
-            if let Ok(mut checker) = self.spell_checker.lock() {
+            {
+                let mut checker = self.spell_checker.lock().unwrap();
                 if checker.add_word_to_dictionary(&word).is_ok() {
                     println!("Added word to dictionary: {}", word);
-                    self.check_spelling(); // Re-check with updated dictionary
                 }
             }
+            self.check_spelling(); // Re-check with updated dictionary
         }
         
         // Handle ignoring words
         if let Some(word) = self.pending_ignore_word.take() {
-            if let Ok(mut checker) = self.spell_checker.lock() {
+            {
+                let mut checker = self.spell_checker.lock().unwrap();
                 if checker.ignore_word(&word).is_ok() {
                     println!("Ignored word: {}", word);
-                    self.check_spelling(); // Re-check with updated ignore list
                 }
             }
+            self.check_spelling(); // Re-check with updated ignore list
         }
         
         // Handle word replacement
@@ -304,14 +307,15 @@ impl SpellCheckerApp {
                 .set_directory(self.state.last_directory.clone().unwrap_or_else(|| PathBuf::from(".")))
                 .pick_file()
             {
-                if let Ok(mut checker) = self.spell_checker.lock() {
+                {
+                    let mut checker = self.spell_checker.lock().unwrap();
                     if let Err(e) = checker.import_dictionary(&path) {
                         eprintln!("Failed to import dictionary: {}", e);
                     } else {
                         println!("Imported dictionary from: {:?}", path);
-                        self.check_spelling();
                     }
                 }
+                self.check_spelling();
             }
         }
         
@@ -325,7 +329,8 @@ impl SpellCheckerApp {
                 .set_directory(self.state.last_directory.clone().unwrap_or_else(|| PathBuf::from(".")))
                 .save_file()
             {
-                if let Ok(checker) = self.spell_checker.lock() {
+                {
+                    let checker = self.spell_checker.lock().unwrap();
                     if let Err(e) = checker.export_dictionary(&path) {
                         eprintln!("Failed to export dictionary: {}", e);
                     } else {
@@ -338,16 +343,19 @@ impl SpellCheckerApp {
         // Handle clear ignored words
         if self.pending_clear_ignored {
             self.pending_clear_ignored = false;
-            if let Ok(mut checker) = self.spell_checker.lock() {
+            {
+                let mut checker = self.spell_checker.lock().unwrap();
                 checker.clear_ignored_words();
-                self.check_spelling();
             }
+            self.check_spelling();
         }
     }
     
     fn show_about_dialog(&mut self, ctx: &egui::Context) {
+        let mut show_about = self.state.show_about;
+        
         egui::Window::new("About AtomSpell")
-            .open(&mut self.state.show_about)
+            .open(&mut show_about)
             .resizable(false)
             .collapsible(false)
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -385,6 +393,8 @@ impl SpellCheckerApp {
                     });
                 });
             });
+            
+        self.state.show_about = show_about;
     }
     
     fn show_menu_bar(&mut self, ui: &mut egui::Ui) {
@@ -424,10 +434,13 @@ impl SpellCheckerApp {
                 // Recent files
                 if !self.state.recent_files.is_empty() {
                     ui.menu_button("Recent Files", |ui| {
-                        for path in &self.state.recent_files {
+                        // Make a copy to avoid borrowing issues
+                        let recent_files = self.state.recent_files.clone();
+                        for path in &recent_files {
                             if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
                                 if ui.button(format!("📄 {}", filename)).clicked() {
-                                    if let Err(e) = self.open_file(path.clone()) {
+                                    let path_clone = path.clone();
+                                    if let Err(e) = self.open_file(path_clone) {
                                         eprintln!("Failed to open file: {}", e);
                                     }
                                     ui.close_menu();
@@ -459,7 +472,8 @@ impl SpellCheckerApp {
                     let detected = self.language_manager.detect_language(&self.state.document_content);
                     self.state.selected_language = detected;
                     self.state.auto_detect_language = false;
-                    if let Ok(mut checker) = self.spell_checker.lock() {
+                    {
+                        let mut checker = self.spell_checker.lock().unwrap();
                         let _ = checker.set_language(detected);
                     }
                     self.check_spelling();
@@ -523,7 +537,8 @@ impl SpellCheckerApp {
                     ).clicked() {
                         self.state.selected_language = selected_language;
                         self.state.auto_detect_language = false;
-                        if let Ok(mut checker) = self.spell_checker.lock() {
+                        {
+                            let mut checker = self.spell_checker.lock().unwrap();
                             let _ = checker.set_language(*lang);
                         }
                         self.check_spelling();
@@ -612,7 +627,8 @@ impl SpellCheckerApp {
                         ).clicked() {
                             self.state.selected_language = selected_language;
                             self.state.auto_detect_language = false;
-                            if let Ok(mut checker) = self.spell_checker.lock() {
+                            {
+                                let mut checker = self.spell_checker.lock().unwrap();
                                 let _ = checker.set_language(*lang);
                             }
                             self.check_spelling();
@@ -666,7 +682,10 @@ impl SpellCheckerApp {
                     ui.colored_label(egui::Color32::GREEN, "🔄 Auto");
                 }
                 
-                let word_count = self.spell_checker.lock().unwrap().word_count();
+                let word_count = {
+                    let checker = self.spell_checker.lock().unwrap();
+                    checker.word_count()
+                };
                 ui.label(format!("Dict: {}", word_count));
                 
                 if self.state.auto_detect_language {
@@ -690,9 +709,10 @@ impl SpellCheckerApp {
                 .default_width(self.state.sidebar_width)
                 .width_range(200.0..=500.0)
                 .show_inside(ui, |ui| {
+                    let checker = self.spell_checker.lock().unwrap();
                     self.state.sidebar_state.show(
                         ui,
-                        &self.spell_checker.lock().unwrap(),
+                        &checker,
                         &self.analysis,
                         &self.state.document_content,
                         &mut self.pending_add_word,
@@ -785,10 +805,6 @@ impl eframe::App for SpellCheckerApp {
     
     fn auto_save_interval(&self) -> std::time::Duration {
         std::time::Duration::from_secs(30)
-    }
-    
-    fn persist_native_window(&self) -> bool {
-        true
     }
     
     fn persist_egui_memory(&self) -> bool {

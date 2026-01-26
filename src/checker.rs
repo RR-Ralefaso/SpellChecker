@@ -1,12 +1,11 @@
 use crate::dictionary::{Dictionary, DictionaryManager};
 use crate::language::Language;
-use crate::util::{is_cjk_text, sanitize_word};
+use crate::util::sanitize_word;
 use dashmap::DashMap;
 use rayon::prelude::*;
 use serde::Serialize;
 use std::collections::HashSet;
-use std::fs::{self, File};
-use std::io::Write;
+use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 use std::cmp::min;
@@ -42,7 +41,6 @@ pub struct SpellChecker {
     max_suggestions: usize,
     cache: Arc<DashMap<String, bool>>,
     ignore_list: HashSet<String>,
-    user_dictionary_path: Option<String>,
 }
 
 impl SpellChecker {
@@ -64,7 +62,6 @@ impl SpellChecker {
             max_suggestions: 5,
             cache: Arc::new(DashMap::new()),
             ignore_list: HashSet::new(),
-            user_dictionary_path: None,
         })
     }
     
@@ -116,7 +113,6 @@ impl SpellChecker {
         
         for (line_idx, line) in lines.iter().enumerate() {
             let line_num = line_idx + 1;
-            let mut line_offset = 0;
             
             for mat in word_pattern.find_iter(line) {
                 let word = mat.as_str();
@@ -128,8 +124,8 @@ impl SpellChecker {
                 if self.ignore_list.contains(&word_lower) {
                     words.push(WordCheck {
                         word: word.to_string(),
-                        start: line_offset + start,
-                        end: line_offset + end,
+                        start,
+                        end,
                         is_correct: true,
                         suggestions: Vec::new(),
                         line: line_num,
@@ -163,16 +159,14 @@ impl SpellChecker {
                 
                 words.push(WordCheck {
                     word: word.to_string(),
-                    start: line_offset + start,
-                    end: line_offset + end,
+                    start,
+                    end,
                     is_correct,
                     suggestions,
                     line: line_num,
                     column: start + 1,
                 });
             }
-            
-            line_offset += line.len() + 1; // +1 for newline character
         }
         
         let accuracy = if total_words > 0 {
@@ -303,7 +297,7 @@ impl SpellChecker {
         self.cache.clear(); // Clear cache since ignore status changed
     }
     
-    pub fn import_dictionary(&self, path: &Path) -> anyhow::Result<()> {
+    pub fn import_dictionary(&mut self, path: &Path) -> anyhow::Result<()> {
         // Read the file to detect language or use current language
         let content = fs::read_to_string(path)?;
         
@@ -316,7 +310,7 @@ impl SpellChecker {
         };
         
         // Import dictionary
-        self.dictionary_manager.import_dictionary(path, language_to_use)?;
+        self.dictionary_manager.import_dictionary(path.to_path_buf(), language_to_use)?;
         
         // Clear cache since dictionary changed
         self.cache.clear();

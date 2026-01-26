@@ -63,10 +63,6 @@ pub const APP_REPOSITORY: &str = "https://github.com/RR-Ralefaso/SpellChecker";
 pub const SPONSOR_URL: &str = "https://github.com/sponsors";
 
 // Helper functions
-pub fn get_app_info() -> String {
-    format!("{} v{}\nBy {}", APP_NAME, APP_VERSION, APP_AUTHOR)
-}
-
 pub fn open_sponsor_page() -> Result<()> {
     open::that(SPONSOR_URL).map_err(|e| SpellCheckerError::Unknown(e.into()))
 }

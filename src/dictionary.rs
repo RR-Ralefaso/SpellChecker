@@ -1,13 +1,11 @@
 use crate::language::{Language, LanguageManager};
 use dashmap::DashMap;
-use rayon::prelude::*;
 use regex::Regex;
 use std::collections::HashSet;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use once_cell::sync::Lazy;
 
 #[derive(Debug, Clone)]
 pub struct Dictionary {
@@ -414,8 +412,8 @@ impl DictionaryManager {
         }
     }
     
-    pub fn import_dictionary(&mut self, path: &Path, language: Language) -> anyhow::Result<()> {
-        self.add_custom_dictionary(path.to_path_buf(), language)
+    pub fn import_dictionary(&mut self, path: PathBuf, language: Language) -> anyhow::Result<()> {
+        self.add_custom_dictionary(path, language)
     }
     
     pub fn export_dictionary(&self, language: &Language, path: &Path) -> anyhow::Result<()> {
