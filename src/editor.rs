@@ -1,5 +1,4 @@
 use crate::checker::{DocumentAnalysis, WordCheck};
-use crate::theme::AtomTheme;
 use eframe::egui;
 use std::collections::HashMap;
 
@@ -36,9 +35,9 @@ impl TextEditor {
         
         // Build error positions map for quick lookup
         self.error_positions.clear();
-        for word in analysis.words {
+        for word in &analysis.words {
             if !word.is_correct {
-                self.error_positions.insert(word.start, word);
+                self.error_positions.insert(word.start, word.clone());
             }
         }
     }
@@ -50,226 +49,101 @@ impl TextEditor {
         modified: &mut bool,
         show_line_numbers: bool,
     ) -> egui::Response {
-        let available_width = ui.available_width();
-        let available_height = ui.available_height();
+        let available_rect = ui.available_rect_before_wrap();
         
-        // Create scroll area
-        let scroll_area = egui::ScrollArea::vertical()
-            .auto_shrink([false, false])
-            .scroll_offset(vec2(0.0, self.scroll_offset))
-            .max_height(available_height);
+        // Use egui's TextEdit widget for editing
+        let mut text_edit = egui::TextEdit::multiline(content)
+            .desired_width(available_rect.width())
+            .font(egui::FontId::monospace(self.font_size))
+            .code_editor();
         
-        scroll_area.show(ui, |ui| {
-            // Calculate line count
-            let line_count = content.lines().count().max(1);
-            
-            // Create painter for custom rendering
-            let painter = ui.painter();
-            let rect = ui.available_rect_before_wrap();
-            
-            // Draw background
-            painter.rect_filled(rect, 0.0, ui.visuals().window_fill);
-            
-            // Calculate text layout
-            let font_id = egui::FontId::new(self.font_size, egui::FontFamily::Proportional);
-            let galley = ui.fonts(|f| {
-                f.layout_no_wrap(
-                    content.clone(),
-                    font_id.clone(),
-                    ui.visuals().text_color(),
-                    available_width,
-                )
-            });
-            
-            // Draw line numbers if enabled
-            if show_line_numbers {
-                let line_number_width = 60.0;
-                let line_number_rect = rect.split_left_right_at_width(line_number_width).0;
-                
-                painter.rect_filled(
-                    line_number_rect,
-                    0.0,
-                    ui.visuals().faint_bg_color,
-                );
-                
-                for line in 1..=line_count {
-                    let y_pos = (line - 1) as f32 * self.line_height;
-                    let line_number_text = format!("{:>4}", line);
-                    
-                    painter.text(
-                        pos2(line_number_rect.left() + 10.0, line_number_rect.top() + y_pos + self.line_height * 0.75),
-                        egui::Align2::LEFT_CENTER,
-                        line_number_text,
-                        font_id.clone(),
-                        ui.visuals().weak_text_color(),
-                    );
-                }
-                
-                // Draw separator
-                painter.line_segment(
-                    [
-                        pos2(line_number_rect.right(), rect.top()),
-                        pos2(line_number_rect.right(), rect.bottom()),
-                    ],
-                    (1.0, ui.visuals().widgets.noninteractive.bg_stroke.color),
-                );
+        // Configure based on settings
+        if self.wrap_lines {
+            text_edit = text_edit.desired_rows((available_rect.height() / self.line_height) as usize);
+        } else {
+            text_edit = text_edit.desired_width(f32::INFINITY);
+        }
+        
+        let response = ui.add(text_edit.frame(false));
+        
+        if response.changed() {
+            *modified = true;
+        }
+        
+        // Update cursor position
+        if response.has_focus() {
+            if let Some(state) = ui.ctx().memory(|mem| 
+                mem.data.get_temp::<egui::text_edit::TextEditState>(response.id)
+            ) {
+                self.cursor_pos = state.cursor.primary.ccursor.index;
             }
-            
-            // Draw text content with highlighting
-            let text_start_x = if show_line_numbers { 70.0 } else { 10.0 };
-            let mut char_pos = 0;
-            
-            for (line_idx, line) in content.lines().enumerate() {
-                let y_pos = line_idx as f32 * self.line_height;
-                let mut x_pos = text_start_x;
-                
-                for (word_start, word) in self.extract_words_with_positions(line) {
-                    let word_end = word_start + word.len();
-                    let word_text = &line[word_start..word_end];
+        }
+        
+        // Draw custom error highlighting on top
+        self.draw_error_highlights(ui, &response.rect, show_line_numbers);
+        
+        response
+    }
+    
+    fn draw_error_highlights(
+        &self,
+        ui: &mut egui::Ui,
+        rect: &egui::Rect,
+        show_line_numbers: bool,
+    ) {
+        let painter = ui.painter();
+        
+        if let Some(analysis) = &self.analysis {
+            for word in &analysis.words {
+                if !word.is_correct {
+                    // Draw error underline
+                    let line_y = rect.top() + (word.line - 1) as f32 * self.line_height;
+                    let x_offset = if show_line_numbers { 55.0 } else { 5.0 };
+                    let char_width = self.font_size * 0.6;
                     
-                    // Check if this word has an error
-                    let is_error = if let Some(analysis) = &self.analysis {
-                        analysis.words.iter().any(|w| 
-                            w.line == line_idx + 1 && 
-                            w.word == word_text
-                        )
-                    } else {
-                        false
-                    };
+                    // Simple positioning - for exact positioning we'd need character-level layout
+                    let underline_x = x_offset + (word.column - 1) as f32 * char_width;
+                    let underline_width = word.word.len() as f32 * char_width;
                     
-                    // Draw word with appropriate color
-                    let color = if is_error {
-                        ui.visuals().error_fg_color
-                    } else {
-                        ui.visuals().text_color()
-                    };
-                    
-                    painter.text(
-                        pos2(x_pos, rect.top() + y_pos + self.line_height * 0.75),
-                        egui::Align2::LEFT_CENTER,
-                        word_text,
-                        font_id.clone(),
-                        color,
-                    );
-                    
-                    // Underline errors
-                    if is_error {
-                        let word_width = self.measure_text_width(word_text, &font_id, ui);
-                        painter.line_segment(
-                            [
-                                pos2(x_pos, rect.top() + y_pos + self.line_height),
-                                pos2(x_pos + word_width, rect.top() + y_pos + self.line_height),
-                            ],
-                            (2.0, ui.visuals().error_fg_color),
-                        );
-                    }
-                    
-                    x_pos += self.measure_text_width(word_text, &font_id, ui) + 
-                           self.measure_text_width(" ", &font_id, ui);
-                }
-                
-                // Draw line break if not last line
-                if line_idx < line_count - 1 {
-                    painter.text(
-                        pos2(x_pos, rect.top() + y_pos + self.line_height * 0.75),
-                        egui::Align2::LEFT_CENTER,
-                        "",
-                        font_id.clone(),
-                        ui.visuals().text_color(),
+                    // Draw wavy underline for errors
+                    self.draw_wavy_underline(
+                        painter,
+                        underline_x,
+                        line_y + self.line_height - 2.0,
+                        underline_width,
+                        ui.visuals().error_fg_color,
                     );
                 }
-                
-                char_pos += line.len() + 1; // +1 for newline
             }
+        }
+    }
+    
+    fn draw_wavy_underline(
+        &self,
+        painter: &egui::Painter,
+        x: f32,
+        y: f32,
+        width: f32,
+        color: egui::Color32,
+    ) {
+        let wave_height = 2.0;
+        let wave_length = 4.0;
+        let segments = (width / wave_length).ceil() as usize;
+        
+        for i in 0..segments {
+            let segment_x = x + i as f32 * wave_length;
+            let segment_end_x = (segment_x + wave_length).min(x + width);
             
-            // Draw cursor
-            let cursor_y = (self.get_cursor_line(content) as f32) * self.line_height;
-            let cursor_x = self.get_cursor_x(content, &font_id, ui, text_start_x);
+            let y_offset = if i % 2 == 0 { 0.0 } else { wave_height };
             
             painter.line_segment(
                 [
-                    pos2(cursor_x, rect.top() + cursor_y),
-                    pos2(cursor_x, rect.top() + cursor_y + self.line_height),
+                    egui::pos2(segment_x, y + y_offset),
+                    egui::pos2(segment_end_x, y + y_offset),
                 ],
-                (2.0, ui.visuals().text_color()),
+                (1.0, color),
             );
-            
-            // Handle text input
-            let response = ui.add(
-                egui::TextEdit::multiline(content)
-                    .desired_width(f32::INFINITY)
-                    .desired_rows((available_height / self.line_height) as usize)
-                    .font(font_id)
-                    .frame(false),
-            );
-            
-            if response.changed() {
-                *modified = true;
-            }
-            
-            // Update cursor position based on interaction
-            if response.has_focus() {
-                if let Some(mut state) = response.ctx.memory(|mem| mem.data.get_temp::<egui::text_edit::TextEditState>(response.id)) {
-                    self.cursor_pos = state.cursor.primary.ccursor.index;
-                    state.store(ui.ctx(), response.id);
-                }
-            }
-            
-            response
-        }).inner
-    }
-    
-    fn extract_words_with_positions(&self, text: &str) -> Vec<(usize, String)> {
-        let mut words = Vec::new();
-        let mut current_word = String::new();
-        let mut current_pos = 0;
-        let mut word_start = 0;
-        
-        for (i, ch) in text.char_indices() {
-            if ch.is_alphanumeric() || ch == '\'' || ch == '-' {
-                if current_word.is_empty() {
-                    word_start = i;
-                }
-                current_word.push(ch);
-            } else if !current_word.is_empty() {
-                words.push((word_start, current_word.clone()));
-                current_word.clear();
-            }
         }
-        
-        if !current_word.is_empty() {
-            words.push((word_start, current_word));
-        }
-        
-        words
-    }
-    
-    fn measure_text_width(&self, text: &str, font_id: &egui::FontId, ui: &egui::Ui) -> f32 {
-        ui.fonts(|f| f.glyph_width(font_id, text))
-    }
-    
-    fn get_cursor_line(&self, content: &str) -> usize {
-        let chars_before = content.chars().take(self.cursor_pos).count();
-        let line = content.chars().take(chars_before).filter(|&c| c == '\n').count();
-        line
-    }
-    
-    fn get_cursor_x(&self, content: &str, font_id: &egui::FontId, ui: &egui::Ui, text_start_x: f32) -> f32 {
-        let line_start = content
-            .chars()
-            .take(self.cursor_pos)
-            .collect::<String>()
-            .rfind('\n')
-            .map(|pos| pos + 1)
-            .unwrap_or(0);
-        
-        let line_text = content
-            .chars()
-            .skip(line_start)
-            .take(self.cursor_pos - line_start)
-            .collect::<String>();
-        
-        text_start_x + self.measure_text_width(&line_text, font_id, ui)
     }
     
     pub fn set_font_size(&mut self, size: f32) {
@@ -292,13 +166,4 @@ impl TextEditor {
             None
         }
     }
-}
-
-// Helper functions
-fn pos2(x: f32, y: f32) -> egui::Pos2 {
-    egui::pos2(x, y)
-}
-
-fn vec2(x: f32, y: f32) -> egui::Vec2 {
-    egui::vec2(x, y)
 }

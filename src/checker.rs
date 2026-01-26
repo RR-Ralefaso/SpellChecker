@@ -5,6 +5,7 @@ use rayon::prelude::*;
 use regex::Regex;
 use serde::Serialize;
 use std::sync::Arc;
+use std::cmp::min;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct WordCheck {
@@ -41,7 +42,11 @@ impl SpellChecker {
     pub fn new(language: Language) -> anyhow::Result<Self> {
         let dictionary_manager = DictionaryManager::new();
         
-        dictionary_manager.get_dictionary(&language)?;
+        // Try to load dictionary
+        if let Err(e) = dictionary_manager.get_dictionary(&language) {
+            eprintln!("Warning: Could not load dictionary for {}: {}", language.name(), e);
+            // Continue with empty dictionary
+        }
         
         Ok(Self {
             dictionary_manager,
@@ -71,10 +76,10 @@ impl SpellChecker {
     }
     
     pub fn check_document(&self, text: &str) -> DocumentAnalysis {
-        let dictionary = match self.dictionary_manager.get_dictionary(&self.current_language) {
+        let dictionary = match self.get_current_dictionary() {
             Ok(dict) => dict,
             Err(_) => {
-                // Fallback to empty analysis
+                // Return empty analysis if no dictionary
                 return DocumentAnalysis {
                     total_words: 0,
                     misspelled_words: 0,
@@ -91,6 +96,8 @@ impl SpellChecker {
         let lines: Vec<&str> = text.lines().collect();
         let mut words = Vec::new();
         let mut suggestions_count = 0;
+        let mut total_words = 0;
+        let mut misspelled_words = 0;
         
         for (line_idx, line) in lines.iter().enumerate() {
             for mat in word_pattern.find_iter(line) {
@@ -104,9 +111,14 @@ impl SpellChecker {
                     *cached
                 } else {
                     let correct = dictionary.contains(word, self.case_sensitive);
-                    self.cache.insert(cache_key, correct);
+                    self.cache.insert(cache_key.clone(), correct);
                     correct
                 };
+                
+                total_words += 1;
+                if !is_correct {
+                    misspelled_words += 1;
+                }
                 
                 let suggestions = if !is_correct && self.suggestions_enabled {
                     let sugg = self.get_suggestions(word, &dictionary);
@@ -128,8 +140,6 @@ impl SpellChecker {
             }
         }
         
-        let total_words = words.len();
-        let misspelled_words = words.iter().filter(|w| !w.is_correct).count();
         let accuracy = if total_words > 0 {
             ((total_words - misspelled_words) as f32 / total_words as f32 * 100.0).round()
         } else {
@@ -148,25 +158,41 @@ impl SpellChecker {
     }
     
     fn get_suggestions(&self, word: &str, dictionary: &Dictionary) -> Vec<String> {
-        if word.chars().any(|c| c.is_numeric()) {
+        // Don't suggest for very short words or numbers
+        if word.len() <= 1 || word.chars().any(|c| c.is_numeric()) {
             return Vec::new();
         }
         
         let word_lower = word.to_lowercase();
         let dict_words = dictionary.get_words();
         
-        // Simple suggestion algorithm based on edit distance
-        let mut suggestions: Vec<(String, usize)> = dict_words
+        // Early exit for common cases
+        if dict_words.contains(&word_lower) {
+            return Vec::new();
+        }
+        
+        // Limit the number of dictionary words to check for performance
+        let max_candidates = 1000;
+        let candidates: Vec<&String> = dict_words.iter()
+            .filter(|w| {
+                // Quick filter: similar length and first character
+                let len_diff = (w.len() as isize - word_lower.len() as isize).abs();
+                len_diff <= 2 && 
+                w.chars().next() == word_lower.chars().next()
+            })
+            .take(max_candidates)
+            .collect();
+        
+        let mut suggestions: Vec<(String, usize)> = candidates
             .par_iter()
-            .map(|dict_word| {
+            .map(|&dict_word| {
                 let distance = self.edit_distance(&word_lower, dict_word);
                 (dict_word.clone(), distance)
             })
             .filter(|(_, distance)| *distance <= 2)
-            .take(50) // Limit candidates for performance
             .collect();
         
-        suggestions.sort_by(|a, b| a.1.cmp(&b.1));
+        suggestions.sort_by_key(|(_, distance)| *distance);
         suggestions
             .into_iter()
             .take(self.max_suggestions)
@@ -174,46 +200,61 @@ impl SpellChecker {
             .collect()
     }
     
+    // Optimized edit distance (Levenshtein) calculation
     fn edit_distance(&self, a: &str, b: &str) -> usize {
-        let a_chars: Vec<char> = a.chars().collect();
-        let b_chars: Vec<char> = b.chars().collect();
-        let a_len = a_chars.len();
-        let b_len = b_chars.len();
+        if a == b { return 0; }
+        
+        let a_len = a.chars().count();
+        let b_len = b.chars().count();
         
         if a_len == 0 { return b_len; }
         if b_len == 0 { return a_len; }
         
-        let mut prev_row: Vec<usize> = (0..=b_len).collect();
-        let mut curr_row = vec![0; b_len + 1];
-        
-        for i in 1..=a_len {
-            curr_row[0] = i;
+        // Use small vectors for common cases
+        if a_len <= 64 && b_len <= 64 {
+            let mut prev_row: Vec<usize> = (0..=b_len).collect();
+            let mut curr_row = vec![0; b_len + 1];
             
-            for j in 1..=b_len {
-                let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
-                curr_row[j] = (prev_row[j] + 1)
-                    .min(curr_row[j - 1] + 1)
-                    .min(prev_row[j - 1] + cost);
+            let a_chars: Vec<char> = a.chars().collect();
+            let b_chars: Vec<char> = b.chars().collect();
+            
+            for i in 1..=a_len {
+                curr_row[0] = i;
+                
+                for j in 1..=b_len {
+                    let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+                    curr_row[j] = min(
+                        min(prev_row[j] + 1, curr_row[j - 1] + 1),
+                        prev_row[j - 1] + cost
+                    );
+                }
+                
+                std::mem::swap(&mut prev_row, &mut curr_row);
             }
             
-            std::mem::swap(&mut prev_row, &mut curr_row);
+            prev_row[b_len]
+        } else {
+            // For longer strings, use a simpler approximation
+            let len_diff = (a_len as isize - b_len as isize).abs() as usize;
+            let common_chars = a.chars()
+                .zip(b.chars())
+                .filter(|(ca, cb)| ca == cb)
+                .count();
+            
+            len_diff + (min(a_len, b_len) - common_chars)
         }
-        
-        prev_row[b_len]
     }
     
     pub fn add_word_to_dictionary(&mut self, word: &str) -> anyhow::Result<()> {
-        let mut dict = self.get_current_dictionary()?;
-        dict.add_word(word);
-        
-        // Update cache
         let cache_key = format!("{}_{}", self.current_language.code(), word.to_lowercase());
         self.cache.insert(cache_key, true);
         
-        // Update dictionary in manager
-        self.dictionary_manager
-            .dictionaries
-            .insert(self.current_language, dict);
+        // Update dictionary
+        if let Ok(mut dict) = self.get_current_dictionary() {
+            dict.add_word(word);
+            // Re-insert updated dictionary
+            self.dictionary_manager.dictionaries.insert(self.current_language, dict);
+        }
         
         Ok(())
     }

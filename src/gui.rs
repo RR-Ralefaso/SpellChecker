@@ -86,7 +86,10 @@ impl SpellCheckerApp {
         
         let spell_checker = Arc::new(
             SpellChecker::new(state.selected_language)
-                .expect("Failed to create spell checker"),
+                .unwrap_or_else(|e| {
+                    eprintln!("Failed to create spell checker: {}", e);
+                    SpellChecker::new(Language::English).unwrap()
+                })
         );
         
         let mut text_editor = TextEditor::new();
@@ -111,28 +114,32 @@ impl SpellCheckerApp {
     }
     
     fn check_spelling(&mut self) {
-        if self.state.auto_check && !self.state.document_content.is_empty() {
-            let start_time = Instant::now();
-            
-            // Detect language if auto-detect is enabled
-            let language_to_use = if self.state.auto_detect_language {
-                let detected = self.language_manager.detect_language(&self.state.document_content);
-                self.stats.detected_language = Some(detected);
-                detected
-            } else {
-                self.state.selected_language
-            };
-            
-            // Update spell checker language if changed
-            if language_to_use != self.spell_checker.current_language() {
-                if let Err(e) = Arc::get_mut(&mut self.spell_checker).unwrap().set_language(language_to_use) {
+        if !self.state.auto_check || self.state.document_content.is_empty() {
+            return;
+        }
+        
+        let start_time = Instant::now();
+        
+        // Detect language if auto-detect is enabled
+        let language_to_use = if self.state.auto_detect_language {
+            let detected = self.language_manager.detect_language(&self.state.document_content);
+            self.stats.detected_language = Some(detected);
+            detected
+        } else {
+            self.state.selected_language
+        };
+        
+        // Update spell checker language if changed
+        if language_to_use != self.spell_checker.current_language() {
+            if let Ok(mut checker) = Arc::get_mut(&mut self.spell_checker) {
+                if let Err(e) = checker.set_language(language_to_use) {
                     eprintln!("Failed to change language: {}", e);
                 }
             }
-            
-            self.analysis = Some(self.spell_checker.check_document(&self.state.document_content));
-            let analysis = self.analysis.as_ref().unwrap();
-            
+        }
+        
+        self.analysis = Some(self.spell_checker.check_document(&self.state.document_content));
+        if let Some(analysis) = &self.analysis {
             self.stats.total_words = analysis.total_words;
             self.stats.errors = analysis.misspelled_words;
             self.stats.last_check_duration = start_time.elapsed();
@@ -160,8 +167,10 @@ impl SpellCheckerApp {
         if self.state.auto_detect_language {
             let detected = self.language_manager.detect_language(&self.state.document_content);
             self.state.selected_language = detected;
-            if let Err(e) = Arc::get_mut(&mut self.spell_checker).unwrap().set_language(detected) {
-                eprintln!("Failed to set language: {}", e);
+            if let Ok(mut checker) = Arc::get_mut(&mut self.spell_checker) {
+                if let Err(e) = checker.set_language(detected) {
+                    eprintln!("Failed to set language: {}", e);
+                }
             }
         }
         
@@ -299,8 +308,10 @@ impl SpellCheckerApp {
                     let detected = self.language_manager.detect_language(&self.state.document_content);
                     self.state.selected_language = detected;
                     self.state.auto_detect_language = false;
-                    if let Err(e) = Arc::get_mut(&mut self.spell_checker).unwrap().set_language(detected) {
-                        eprintln!("Failed to set language: {}", e);
+                    if let Ok(mut checker) = Arc::get_mut(&mut self.spell_checker) {
+                        if let Err(e) = checker.set_language(detected) {
+                            eprintln!("Failed to set language: {}", e);
+                        }
                     }
                     self.check_spelling();
                     ui.close_menu();
@@ -363,8 +374,10 @@ impl SpellCheckerApp {
                         )
                         .clicked()
                     {
-                        if let Err(e) = Arc::get_mut(&mut self.spell_checker).unwrap().set_language(*lang) {
-                            eprintln!("Failed to change language: {}", e);
+                        if let Ok(mut checker) = Arc::get_mut(&mut self.spell_checker) {
+                            if let Err(e) = checker.set_language(*lang) {
+                                eprintln!("Failed to change language: {}", e);
+                            }
                         }
                         self.state.auto_detect_language = false;
                         self.check_spelling();
@@ -523,10 +536,17 @@ impl SpellCheckerApp {
                     
                     // Handle pending actions
                     if let Some(word) = pending_add_word {
-                        if let Err(e) = Arc::get_mut(&mut self.spell_checker).unwrap().add_word_to_dictionary(&word) {
-                            eprintln!("Failed to add word: {}", e);
+                        if let Ok(mut checker) = Arc::get_mut(&mut self.spell_checker) {
+                            if let Err(e) = checker.add_word_to_dictionary(&word) {
+                                eprintln!("Failed to add word: {}", e);
+                            }
                         }
                         self.check_spelling();
+                    }
+                    
+                    if let Some(word) = pending_ignore_word {
+                        // TODO: Implement ignore word functionality
+                        println!("Ignore word: {}", word);
                     }
                     
                     if let Some((find, replace)) = pending_replace {
@@ -596,5 +616,9 @@ impl eframe::App for SpellCheckerApp {
         
         // Request repaint if needed
         ctx.request_repaint();
+    }
+    
+    fn save(&mut self, _storage: &mut dyn eframe::Storage) {
+        // Save application state if needed
     }
 }

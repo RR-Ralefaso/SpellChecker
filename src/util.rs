@@ -1,9 +1,14 @@
 use regex::Regex;
 use std::collections::HashMap;
+use once_cell::sync::Lazy;
+
+// Compile regex only once for better performance
+static WORD_REGEX: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r"\b[\p{L}0-9'-]+\b").unwrap()
+});
 
 pub fn extract_words(text: &str) -> Vec<String> {
-    let word_regex = Regex::new(r"\b[\p{L}0-9'-]+\b").unwrap();
-    word_regex
+    WORD_REGEX
         .find_iter(text)
         .map(|mat| mat.as_str().to_lowercase())
         .collect()
@@ -19,7 +24,7 @@ pub fn word_frequency(text: &str) -> HashMap<String, usize> {
 
 pub fn most_common_words(freq: &HashMap<String, usize>, n: usize) -> Vec<(String, usize)> {
     let mut words: Vec<_> = freq.iter().map(|(w, c)| (w.clone(), *c)).collect();
-    words.sort_by(|a, b| b.1.cmp(&a.1));
+    words.sort_unstable_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     words.truncate(n);
     words
 }
@@ -27,7 +32,7 @@ pub fn most_common_words(freq: &HashMap<String, usize>, n: usize) -> Vec<(String
 pub fn reading_time(text: &str) -> (usize, usize) {
     let words = extract_words(text).len();
     let minutes = words / 200; // Average reading speed: 200 words per minute
-    let seconds = ((words % 200) as f32 / 200.0 * 60.0) as usize;
+    let seconds = ((words % 200) * 60) / 200;
     (minutes, seconds)
 }
 

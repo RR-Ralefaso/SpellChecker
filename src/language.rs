@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use once_cell::sync::Lazy;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Language {
@@ -118,9 +119,6 @@ impl Language {
     }
     
     pub fn detect_from_text(text: &str) -> Vec<(Language, f32)> {
-        use once_cell::sync::Lazy;
-        use std::collections::HashMap;
-        
         static COMMON_WORDS: Lazy<HashMap<Language, Vec<&'static str>>> = Lazy::new(|| {
             let mut map = HashMap::new();
             map.insert(Language::English, vec![
@@ -213,7 +211,7 @@ impl Language {
         
         // Sort by score
         let mut sorted_scores: Vec<(Language, f32)> = scores.into_iter().collect();
-        sorted_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+        sorted_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         
         sorted_scores.truncate(3);
         sorted_scores
@@ -272,7 +270,7 @@ impl LanguageManager {
     }
     
     pub fn dictionary_dir() -> PathBuf {
-        let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let mut path = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         path.push("src");
         path.push("dictionary");
         path

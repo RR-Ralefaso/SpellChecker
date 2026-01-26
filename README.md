@@ -1,25 +1,39 @@
-# SpellChecker
-    - Spell checker for english and afrikaans .helps look for typos and high light them written in Rust
-    - used for files with the following file extensions:
-        - txt
-        - md
-        - rs
-        - py
-        - js
-        - css
-        - html
+# AtomSpell - Atom IDE Inspired Spell Checker
 
-# about
+A modern, multilingual spell checker with a beautiful Atom IDE-inspired interface.
 
-    - written in Rust
-    - just as a fun project to help with improving in rust
+## Features
 
-# status 
-    - incomplete 
-    - in progress
+- **Multi-language Support**: Check spelling in 10+ languages
+- **Real-time Checking**: Auto-check as you type
+- **Smart Suggestions**: Intelligent word suggestions
+- **Atom IDE Themes**: Multiple beautiful themes
+- **Document Statistics**: Word frequency, accuracy, reading time
+- **Dictionary Management**: Add custom words and dictionaries
+- **Find & Replace**: Powerful text search and replace
+- **Drag & Drop**: Open files by dragging them onto the app
 
-# creator and message
-    - RR-RALEFASO (polaris)
-    - open source
-    - give credit where its due
+## Supported Languages
 
+- English 🇬🇧
+- Afrikaans 🇿🇦
+- French 🇫🇷
+- Spanish 🇪🇸
+- German 🇩🇪
+- Chinese 🇨🇳
+- Italian 🇮🇹
+- Portuguese 🇵🇹
+- Russian 🇷🇺
+- Japanese 🇯🇵
+- Korean 🇰🇷
+- Auto-detect 🌐
+
+## Installation
+
+### From Source
+
+1. Clone the repository:
+
+```bash
+git clone https://github.com/RR-Ralefaso/SpellChecker.git
+cd SpellChecker

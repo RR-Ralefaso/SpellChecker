@@ -5,7 +5,7 @@ pub mod gui;
 pub mod language;
 pub mod sidebar;
 pub mod theme;
-pub mod utils;
+pub mod util;
 
 pub use checker::{DocumentAnalysis, SpellChecker, WordCheck};
 pub use dictionary::DictionaryManager;
@@ -30,6 +30,12 @@ pub enum SpellCheckerError {
     
     #[error("GUI error: {0}")]
     Gui(String),
+    
+    #[error("Regex error: {0}")]
+    Regex(#[from] regex::Error),
+    
+    #[error("Anyhow error: {0}")]
+    Anyhow(#[from] anyhow::Error),
 }
 
 pub type Result<T> = std::result::Result<T, SpellCheckerError>;

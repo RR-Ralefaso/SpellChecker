@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use eframe::egui;
-use spell_checker_gui::SpellCheckerApp;
+use spellchecker::SpellCheckerApp;
 
 fn main() -> Result<(), eframe::Error> {
     let options = eframe::NativeOptions {
@@ -10,8 +10,9 @@ fn main() -> Result<(), eframe::Error> {
             .with_min_inner_size([800.0, 600.0])
             .with_title("AtomSpell - Atom IDE Inspired Spell Checker")
             .with_icon(
-                eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icons/icon.png")[..])
-                    .unwrap(),
+                // Note: You'll need to create an icon file or remove this line
+                // eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icons/icon.png")[..])
+                //     .unwrap(),
             ),
         ..Default::default()
     };
@@ -25,15 +26,20 @@ fn main() -> Result<(), eframe::Error> {
             
             // Load custom font for Atom-like typography
             let mut fonts = egui::FontDefinitions::default();
-            fonts.font_data.insert(
-                "FiraCode".to_owned(),
-                egui::FontData::from_static(include_bytes!("../assets/fonts/FiraCode-Regular.ttf")),
-            );
-            fonts
-                .families
-                .entry(egui::FontFamily::Proportional)
-                .or_default()
-                .insert(0, "FiraCode".to_owned());
+            
+            // Try to load FiraCode, fall back to default if not available
+            if let Ok(font_data) = std::fs::read("assets/fonts/FiraCode-Regular.ttf") {
+                fonts.font_data.insert(
+                    "FiraCode".to_owned(),
+                    egui::FontData::from_owned(font_data),
+                );
+                fonts
+                    .families
+                    .entry(egui::FontFamily::Monospace)
+                    .or_default()
+                    .insert(0, "FiraCode".to_owned());
+            }
+            
             cc.egui_ctx.set_fonts(fonts);
             
             Box::new(SpellCheckerApp::new(cc))

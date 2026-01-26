@@ -6,7 +6,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use walkdir::WalkDir;
+use once_cell::sync::Lazy;
 
 #[derive(Debug, Clone)]
 pub struct Dictionary {
@@ -35,20 +35,29 @@ impl Dictionary {
     }
     
     fn get_word_pattern_for_language(language: &Language) -> Regex {
+        // Use lazy static regexes for common patterns
+        static CHINESE_PATTERN: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"[\p{Han}\p{Hiragana}\p{Katakana}a-zA-Z0-9'-]+").unwrap()
+        });
+        
+        static KOREAN_PATTERN: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"[\p{Hangul}a-zA-Z0-9'-]+").unwrap()
+        });
+        
+        static RUSSIAN_PATTERN: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"[\p{Cyrillic}a-zA-Z0-9'-]+").unwrap()
+        });
+        
+        static DEFAULT_PATTERN: Lazy<Regex> = Lazy::new(|| {
+            Regex::new(r"[\p{L}0-9'-]+").unwrap()
+        });
+        
         match language {
-            Language::Chinese | Language::Japanese => {
-                Regex::new(r"[\p{Han}\p{Hiragana}\p{Katakana}a-zA-Z0-9'-]+").unwrap()
-            }
-            Language::Korean => {
-                Regex::new(r"[\p{Hangul}a-zA-Z0-9'-]+").unwrap()
-            }
-            Language::Russian => {
-                Regex::new(r"[\p{Cyrillic}a-zA-Z0-9'-]+").unwrap()
-            }
-            _ => {
-                Regex::new(r"[\p{L}0-9'-]+").unwrap()
-            }
-        }
+            Language::Chinese | Language::Japanese => &CHINESE_PATTERN,
+            Language::Korean => &KOREAN_PATTERN,
+            Language::Russian => &RUSSIAN_PATTERN,
+            _ => &DEFAULT_PATTERN,
+        }.clone()
     }
     
     pub fn load(&mut self) -> anyhow::Result<()> {
@@ -80,30 +89,24 @@ impl Dictionary {
     }
     
     pub fn load_file(&mut self, path: &Path) -> anyhow::Result<()> {
-        let content = match fs::read_to_string(path) {
-            Ok(content) => content,
-            Err(e) => {
-                // Try different encodings
-                let bytes = fs::read(path)?;
-                let (content, _, _) = encoding_rs::UTF_8.decode(&bytes);
-                content.into_owned()
-            }
-        };
+        let bytes = fs::read(path)?;
+        let (content, _, _) = encoding_rs::UTF_8.decode(&bytes);
+        let content = content.into_owned();
         
         let new_words: HashSet<String> = content
             .par_lines()
-            .map(|line| {
-                let word = match self.language {
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .map(|word| {
+                match self.language {
                     Language::Chinese | Language::Japanese | Language::Korean => {
-                        line.trim().to_string()
+                        word.to_string()
                     }
                     _ => {
-                        line.trim().to_lowercase()
+                        word.to_lowercase()
                     }
-                };
-                word
+                }
             })
-            .filter(|word| !word.is_empty())
             .filter(|word| word.len() >= self.min_word_length)
             .collect();
             
@@ -114,7 +117,9 @@ impl Dictionary {
     }
     
     pub fn contains(&self, word: &str, case_sensitive: bool) -> bool {
-        if word.trim().is_empty() || word.len() < self.min_word_length {
+        let word = word.trim();
+        
+        if word.is_empty() || word.len() < self.min_word_length {
             return true;
         }
         
@@ -124,17 +129,15 @@ impl Dictionary {
             }
         }
         
-        if word.chars().any(|c| c.is_numeric()) {
+        // Skip words with numbers
+        if word.chars().any(|c| c.is_ascii_digit()) {
             return true;
         }
         
         match self.language {
             Language::Chinese | Language::Japanese | Language::Korean => {
-                if case_sensitive {
-                    self.words.contains(word)
-                } else {
-                    self.words.contains(&word.to_lowercase())
-                }
+                // CJK languages are typically not case-sensitive
+                self.words.contains(word)
             }
             _ => {
                 if case_sensitive {
@@ -168,12 +171,14 @@ impl Dictionary {
     
     pub fn add_word(&mut self, word: &str) {
         let normalized = match self.language {
-            Language::Chinese | Language::Japanese | Language::Korean => word.to_string(),
-            _ => word.to_lowercase(),
+            Language::Chinese | Language::Japanese | Language::Korean => word.trim().to_string(),
+            _ => word.trim().to_lowercase(),
         };
         
-        self.words.insert(normalized);
-        self.word_count_cache = self.words.len();
+        if !normalized.is_empty() {
+            self.words.insert(normalized);
+            self.word_count_cache = self.words.len();
+        }
     }
     
     pub fn remove_word(&mut self, word: &str) -> bool {
@@ -198,7 +203,7 @@ impl DictionaryManager {
         
         // Pre-load English dictionary as default
         let mut english_dict = Dictionary::new(Language::English);
-        if let Ok(_) = english_dict.load() {
+        if english_dict.load().is_ok() {
             dictionaries.insert(Language::English, english_dict);
         }
         
@@ -257,6 +262,6 @@ impl DictionaryManager {
     }
     
     pub fn get_cached_dictionary(&self, language: &Language) -> Option<Dictionary> {
-        self.dictionaries.get(language).map(|d| d.clone())
+        self.dictionaries.get(language).map(|d| d.value().clone())
     }
 }

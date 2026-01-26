@@ -1,22 +1,20 @@
 use crate::checker::{DocumentAnalysis, SpellChecker};
 use crate::language::Language;
-use crate::theme::AtomTheme;
 use eframe::egui;
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct Sidebar {
-    show_dictionary: bool,
-    show_errors: bool,
-    show_stats: bool,
-    show_find: bool,
-    show_replace: bool,
-    selected_error_index: usize,
-    find_text: String,
-    replace_text: String,
-    case_sensitive_find: bool,
-    whole_word_find: bool,
-    visible: bool,
+    pub show_dictionary: bool,
+    pub show_errors: bool,
+    pub show_stats: bool,
+    pub show_find: bool,
+    pub show_replace: bool,
+    pub selected_error_index: usize,
+    pub find_text: String,
+    pub replace_text: String,
+    pub case_sensitive_find: bool,
+    pub whole_word_find: bool,
+    pub visible: bool,
 }
 
 impl Sidebar {
@@ -149,7 +147,8 @@ impl Sidebar {
         ui.heading("Add Word");
         ui.horizontal(|ui| {
             let mut new_word = String::new();
-            if ui.text_edit_singleline(&mut new_word).lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            let response = ui.text_edit_singleline(&mut new_word);
+            if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !new_word.is_empty() {
                 *on_add_word = Some(new_word.clone());
             }
             if ui.button("Add").clicked() && !new_word.is_empty() {
@@ -163,7 +162,8 @@ impl Sidebar {
         ui.heading("Ignore Word");
         ui.horizontal(|ui| {
             let mut ignore_word = String::new();
-            if ui.text_edit_singleline(&mut ignore_word).lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            let response = ui.text_edit_singleline(&mut ignore_word);
+            if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) && !ignore_word.is_empty() {
                 *on_ignore_word = Some(ignore_word.clone());
             }
             if ui.button("Ignore").clicked() && !ignore_word.is_empty() {
@@ -341,7 +341,11 @@ impl Sidebar {
         ui.checkbox(&mut self.whole_word_find, "Whole word");
         
         if !self.find_text.is_empty() {
-            let count = content.matches(&self.find_text).count();
+            let count = if self.case_sensitive_find {
+                content.matches(&self.find_text).count()
+            } else {
+                content.to_lowercase().matches(&self.find_text.to_lowercase()).count()
+            };
             ui.label(format!("Found {} occurrences", count));
         }
     }
@@ -373,7 +377,11 @@ impl Sidebar {
         });
         
         if !self.find_text.is_empty() {
-            let count = content.matches(&self.find_text).count();
+            let count = if self.case_sensitive_find {
+                content.matches(&self.find_text).count()
+            } else {
+                content.to_lowercase().matches(&self.find_text.to_lowercase()).count()
+            };
             ui.label(format!("Found {} occurrences", count));
         }
     }
