@@ -7,7 +7,6 @@ pub struct TextEditor {
     font_size: f32,
     show_whitespace: bool,
     wrap_lines: bool,
-    char_width_cache: std::collections::HashMap<char, f32>,
     error_cache: std::collections::HashMap<usize, WordCheck>,
     last_analysis: Option<DocumentAnalysis>,
 }
@@ -25,7 +24,6 @@ impl TextEditor {
             font_size: 14.0,
             show_whitespace: false,
             wrap_lines: true,
-            char_width_cache: std::collections::HashMap::new(),
             error_cache: std::collections::HashMap::new(),
             last_analysis: None,
         }

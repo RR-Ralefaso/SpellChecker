@@ -13,15 +13,13 @@ fn main() -> Result<(), eframe::Error> {
             .with_icon(
                 // Load icon from assets
                 eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icons/icon.png")[..])
-                    .unwrap_or_else(|| {
+                    .unwrap_or_else(|_e| {
                         // Fallback to a simple icon if file not found
                         eprintln!("Warning: Could not load icon.png");
-                        eframe::icon_data::from_png_bytes(&include_bytes!("../assets/icons/icon.png")[..])
+                        eframe::icon_data::from_png_bytes(&[])
                             .unwrap_or_default()
                     })
             ),
-        persist_window: true, // Save window position/size
-        persist_egui_memory: true, // Save UI state
         centered: true,
         ..Default::default()
     };
@@ -31,7 +29,7 @@ fn main() -> Result<(), eframe::Error> {
         options,
         Box::new(|cc| {
             // Restore previous state if available
-            let storage = cc.storage.unwrap();
+            let _storage = cc.storage.unwrap();
             
             // Configure visuals with default dark theme
             cc.egui_ctx.set_visuals(egui::Visuals::dark());
