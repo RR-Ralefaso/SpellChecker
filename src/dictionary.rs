@@ -236,7 +236,7 @@ impl Dictionary {
         let has_underscore = word.contains('_');
         let has_mixed_case = word.chars().any(|c| c.is_uppercase()) && 
                              word.chars().any(|c| c.is_lowercase());
-        let starts_with_letter = word.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false);
+        let _starts_with_letter = word.chars().next().map(|c| c.is_alphabetic()).unwrap_or(false);
         
         (has_underscore && !word.starts_with('_') && !word.ends_with('_')) ||
         (has_mixed_case && !word.chars().all(|c| c.is_uppercase())) ||

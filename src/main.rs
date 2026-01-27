@@ -4,19 +4,12 @@ use eframe::egui;
 use spellchecker::gui::SpellCheckerApp;
 
 fn main() -> Result<(), eframe::Error> {
-    // Set up native options
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1200.0, 800.0])
             .with_min_inner_size([800.0, 600.0])
-            .with_title("AtomSpell - IDE-Inspired Multilingual Spell Checker")
-            .with_active(true)
-            .with_resizable(true),
+            .with_title("AtomSpell - IDE-Inspired Multilingual Spell Checker"),
         centered: true,
-        default_theme: eframe::Theme::Dark,
-        run_and_return: false,
-        renderer: eframe::Renderer::default(),
-        follow_system_theme: true,
         ..Default::default()
     };
     
@@ -24,13 +17,13 @@ fn main() -> Result<(), eframe::Error> {
         "AtomSpell",
         options,
         Box::new(|cc| {
-            // Configure visuals with default dark theme
+            // Set dark theme by default
             cc.egui_ctx.set_visuals(egui::Visuals::dark());
             
-            // Load custom font - FIXED: No shadows, proper loading
+            // Try to load custom font
             let mut fonts = egui::FontDefinitions::default();
             
-            // Try multiple font locations
+            // Try common font locations
             let font_paths = [
                 "assets/fonts/FiraCode-Regular.ttf",
                 "./assets/fonts/FiraCode-Regular.ttf",
@@ -38,7 +31,6 @@ fn main() -> Result<(), eframe::Error> {
                 "FiraCode-Regular.ttf"
             ];
             
-            let mut font_loaded = false;
             for font_path in font_paths {
                 if let Ok(font_data) = std::fs::read(font_path) {
                     fonts.font_data.insert(
@@ -46,35 +38,18 @@ fn main() -> Result<(), eframe::Error> {
                         egui::FontData::from_owned(font_data),
                     );
                     
-                    // Replace monospace family entirely with FiraCode
                     fonts.families.insert(
                         egui::FontFamily::Monospace,
                         vec!["FiraCode".to_owned()]
                     );
                     
-                    // Also add to proportional for consistent UI
-                    if let Some(family) = fonts.families.get_mut(&egui::FontFamily::Proportional) {
-                        family.insert(0, "FiraCode".to_owned());
-                    }
-                    
-                    font_loaded = true;
                     println!("Loaded FiraCode font from: {}", font_path);
                     break;
                 }
             }
             
-            if !font_loaded {
-                eprintln!("Warning: Could not load FiraCode font. Using default monospace font.");
-                // Add a default monospace fallback
-                fonts.families.insert(
-                    egui::FontFamily::Monospace,
-                    vec!["Hack".to_owned(), "Consolas".to_owned(), "Monospace".to_owned()]
-                );
-            }
-            
             cc.egui_ctx.set_fonts(fonts);
             
-            // Create and return the app
             Box::new(SpellCheckerApp::new(cc))
         }),
     )

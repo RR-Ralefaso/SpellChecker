@@ -3429,7 +3429,7 @@ dependencies = [
 
 [[package]]
 name = "spellchecker"
-version = "0.1.1"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3452,6 +3452,7 @@ dependencies = [
  "serde_json",
  "thiserror 1.0.69",
  "unic-langid",
+ "unicode-segmentation",
  "walkdir",
 ]
 

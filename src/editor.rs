@@ -102,7 +102,7 @@ impl TextEditor {
             0.0
         };
         
-        let (rect, response) = ui.allocate_exact_size(
+        let (rect, _response) = ui.allocate_exact_size(
             egui::vec2(available_rect.width(), available_rect.height()),
             egui::Sense::click_and_drag(),
         );
@@ -205,17 +205,14 @@ impl TextEditor {
             let line_y = rect.top() + (line_idx as f32 * self.line_height);
             let text_x = rect.left() + line_numbers_width + 5.0;
             
-            if let Some(lang) = &self.programming_language {
-                self.highlight_syntax(painter, line, text_x, line_y, lang);
-            } else {
-                painter.text(
-                    egui::pos2(text_x, line_y + (self.line_height * 0.7)),
-                    egui::Align2::LEFT_CENTER,
-                    *line,
-                    egui::FontId::monospace(self.font_size),
-                    text_color,
-                );
-            }
+            // Draw regular text
+            painter.text(
+                egui::pos2(text_x, line_y + (self.line_height * 0.7)),
+                egui::Align2::LEFT_CENTER,
+                *line,
+                egui::FontId::monospace(self.font_size),
+                text_color,
+            );
             
             if let Some(analysis) = &self.last_analysis {
                 let line_num = line_idx + 1;
@@ -245,76 +242,6 @@ impl TextEditor {
                     );
                 }
             }
-        }
-    }
-    
-    fn highlight_syntax(&self, painter: &egui::Painter, line: &str, x: f32, y: f32, language: &str) {
-        let char_width = self.font_size * 0.6;
-        let mut current_x = x;
-        let line_y = y + (self.line_height * 0.7);
-        
-        // Define keywords for different languages
-        let (keywords, types, strings, comments, numbers) = match language {
-            "rust" => (
-                vec!["fn", "let", "mut", "pub", "use", "mod", "struct", "enum", "impl", "trait", 
-                     "match", "if", "else", "for", "while", "loop", "return", "break", "continue", 
-                     "self", "super", "crate", "where", "type", "async", "await", "move", "ref", 
-                     "unsafe", "extern", "dyn", "impl", "const", "static"],
-                vec!["i32", "i64", "u32", "u64", "f32", "f64", "bool", "char", "str", "String", 
-                     "Vec", "Option", "Result", "Box", "Arc", "Rc", "RefCell", "Mutex", "HashMap"],
-                vec![],
-                vec!["//", "/*", "*/"],
-                vec![],
-            ),
-            "python" => (
-                vec!["def", "class", "import", "from", "as", "if", "elif", "else", "for", "while", 
-                     "try", "except", "finally", "with", "as", "pass", "return", "yield", "lambda", 
-                     "True", "False", "None", "and", "or", "not", "is", "in", "global", "nonlocal"],
-                vec!["int", "float", "str", "bool", "list", "dict", "tuple", "set", "NoneType"],
-                vec![],
-                vec!["#"],
-                vec![],
-            ),
-            "javascript" => (
-                vec!["function", "const", "let", "var", "if", "else", "for", "while", "return", 
-                     "class", "import", "export", "from", "async", "await", "try", "catch", 
-                     "finally", "throw", "new", "delete", "typeof", "instanceof", "in", "of"],
-                vec!["String", "Number", "Boolean", "Array", "Object", "Function", "Promise"],
-                vec![],
-                vec!["//", "/*", "*/"],
-                vec![],
-            ),
-            _ => (vec![], vec![], vec![], vec![], vec![]),
-        };
-        
-        // Simple word-based highlighting (for demonstration)
-        let words: Vec<&str> = line.split_inclusive(|c: char| !c.is_alphanumeric() && c != '_').collect();
-        
-        for word in words {
-            let trimmed = word.trim();
-            let word_color = if keywords.contains(&trimmed) {
-                egui::Color32::from_rgb(86, 156, 214) // Blue for keywords
-            } else if types.contains(&trimmed) {
-                egui::Color32::from_rgb(78, 201, 176) // Teal for types
-            } else if trimmed.starts_with('"') || trimmed.starts_with('\'') {
-                egui::Color32::from_rgb(206, 145, 120) // Orange for strings
-            } else if trimmed.chars().all(|c| c.is_numeric()) {
-                egui::Color32::from_rgb(181, 206, 168) // Green for numbers
-            } else if comments.iter().any(|&c| trimmed.starts_with(c)) {
-                egui::Color32::from_rgb(87, 166, 74) // Green for comments
-            } else {
-                ui.visuals().text_color()
-            };
-            
-            painter.text(
-                egui::pos2(current_x, line_y),
-                egui::Align2::LEFT_CENTER,
-                word,
-                egui::FontId::monospace(self.font_size),
-                word_color,
-            );
-            
-            current_x += word.len() as f32 * char_width;
         }
     }
     

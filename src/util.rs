@@ -3,17 +3,17 @@ use std::collections::HashMap;
 use once_cell::sync::Lazy;
 
 // Compile regex only once for better performance
-static WORD_REGEX: Lazy<Regex> = Lazy::new(|| {
+pub static WORD_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"\b[\p{L}][\p{L}'-]*\b").unwrap()
 });
 
 // New regex for CJK languages (Chinese, Japanese, Korean)
-static CJK_WORD_REGEX: Lazy<Regex> = Lazy::new(|| {
+pub static CJK_WORD_REGEX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]+|[\p{L}][\p{L}'-]*").unwrap()
 });
 
 // Regex for programming languages (ignores common code patterns)
-static CODE_WORD_REGEX: Lazy<Regex> = Lazy::new(|| {
+pub static CODE_WORD_REGEX: Lazy<Regex> = Lazy::new(|| {
     // Match words but ignore common programming patterns
     Regex::new(r"\b([a-zA-Z][a-zA-Z'-]{2,})\b").unwrap()
 });
@@ -224,7 +224,7 @@ pub fn is_code_file(filename: &str) -> bool {
             "rs" | "py" | "js" | "ts" | "jsx" | "tsx" | "java" | "cpp" | "c" | "cc" | "cxx" |
             "go" | "rb" | "php" | "cs" | "swift" | "kt" | "scala" | "hs" | "lua" |
             "pl" | "r" | "m" | "f" | "f90" | "f95" | "f03" | "f08" | "v" | "sv" |
-            "vhd" | "vhdl" | "asm" | "s" | "asm" | "sh" | "bash" | "zsh" | "fish" |
+            "vhd" | "vhdl" | "asm" | "s" | "sh" | "bash" | "zsh" | "fish" |
             "ps1" | "bat" | "cmd" | "yml" | "yaml" | "toml" | "json" | "xml" | "html" |
             "htm" | "css" | "scss" | "less" | "md" | "markdown" | "tex" | "bib"
         )

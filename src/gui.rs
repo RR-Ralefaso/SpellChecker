@@ -279,22 +279,27 @@ impl SpellCheckerApp {
     }
     
     fn handle_pending_actions(&mut self) {
+        // Create a scope to drop the mutex guard before showing notifications
         if let Some(word) = self.pending_add_word.take() {
-            {
+            let result = {
                 let mut checker = self.spell_checker.lock().unwrap();
-                if checker.add_word_to_dictionary(&word).is_ok() {
-                    self.show_notification(format!("Added '{}' to dictionary", word), egui::Color32::GREEN);
-                }
+                checker.add_word_to_dictionary(&word)
+            };
+            
+            if result.is_ok() {
+                self.show_notification(format!("Added '{}' to dictionary", word), egui::Color32::GREEN);
             }
             self.check_spelling();
         }
         
         if let Some(word) = self.pending_ignore_word.take() {
-            {
+            let result = {
                 let mut checker = self.spell_checker.lock().unwrap();
-                if checker.ignore_word(&word).is_ok() {
-                    self.show_notification(format!("Ignored '{}' for this session", word), egui::Color32::YELLOW);
-                }
+                checker.ignore_word(&word)
+            };
+            
+            if result.is_ok() {
+                self.show_notification(format!("Ignored '{}' for this session", word), egui::Color32::YELLOW);
             }
             self.check_spelling();
         }
@@ -315,13 +320,15 @@ impl SpellCheckerApp {
                 .set_directory(self.state.last_directory.clone().unwrap_or_else(|| PathBuf::from(".")))
                 .pick_file()
             {
-                {
+                let result = {
                     let mut checker = self.spell_checker.lock().unwrap();
-                    if let Err(e) = checker.import_dictionary(&path) {
-                        self.show_notification(format!("Failed to import: {}", e), egui::Color32::RED);
-                    } else {
-                        self.show_notification("Dictionary imported successfully".to_string(), egui::Color32::GREEN);
-                    }
+                    checker.import_dictionary(&path)
+                };
+                
+                if let Err(e) = result {
+                    self.show_notification(format!("Failed to import: {}", e), egui::Color32::RED);
+                } else {
+                    self.show_notification("Dictionary imported successfully".to_string(), egui::Color32::GREEN);
                 }
                 self.check_spelling();
             }
@@ -336,13 +343,15 @@ impl SpellCheckerApp {
                 .set_directory(self.state.last_directory.clone().unwrap_or_else(|| PathBuf::from(".")))
                 .save_file()
             {
-                {
+                let result = {
                     let checker = self.spell_checker.lock().unwrap();
-                    if let Err(e) = checker.export_dictionary(&path) {
-                        self.show_notification(format!("Failed to export: {}", e), egui::Color32::RED);
-                    } else {
-                        self.show_notification("Dictionary exported successfully".to_string(), egui::Color32::GREEN);
-                    }
+                    checker.export_dictionary(&path)
+                };
+                
+                if let Err(e) = result {
+                    self.show_notification(format!("Failed to export: {}", e), egui::Color32::RED);
+                } else {
+                    self.show_notification("Dictionary exported successfully".to_string(), egui::Color32::GREEN);
                 }
             }
         }
@@ -460,7 +469,11 @@ impl SpellCheckerApp {
                 
                 ui.horizontal(|ui| {
                     if ui.button("Reset to Defaults").clicked() {
-                        *self = Self::new(&eframe::CreationContext::default());
+                        // Create a default state instead of trying to reconstruct the app
+                        self.state = AppState::default();
+                        self.text_editor.set_font_size(self.state.font_size);
+                        self.text_editor.set_wrap_lines(self.state.wrap_text);
+                        self.check_interval = std::time::Duration::from_millis(self.state.check_interval_ms);
                     }
                     
                     if ui.button("Save").clicked() {
@@ -726,70 +739,66 @@ impl SpellCheckerApp {
         });
     }
     
-    fn show_status_bar(&mut self, ui: &mut egui::Ui) {
-        egui::TopBottomPanel::bottom("status_bar")
-            .exact_height(24.0)
-            .show_inside(ui, |ui| {
-                ui.horizontal(|ui| {
-                    if let Some(path) = &self.state.current_file {
-                        let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("Untitled");
-                        ui.label(format!("📄 {}", filename));
-                    } else {
-                        ui.label("📄 Untitled");
-                    }
-                    
-                    if self.state.is_document_modified {
-                        ui.colored_label(egui::Color32::YELLOW, "(modified)");
-                    }
-                });
+    fn show_status_bar(&self, ui: &mut egui::Ui) {
+        ui.horizontal(|ui| {
+            if let Some(path) = &self.state.current_file {
+                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("Untitled");
+                ui.label(format!("📄 {}", filename));
+            } else {
+                ui.label("📄 Untitled");
+            }
+            
+            if self.state.is_document_modified {
+                ui.colored_label(egui::Color32::YELLOW, "(modified)");
+            }
+        });
+        
+        ui.with_layout(egui::Layout::centered_and_justified(egui::Direction::LeftToRight), |ui| {
+            ui.horizontal(|ui| {
+                ui.label(format!("📝 Words: {}", self.stats.total_words));
+                ui.label(format!("📊 Lines: {}", self.stats.total_lines));
+                ui.label(format!("🔤 Chars: {}", self.stats.total_characters));
                 
-                ui.with_layout(egui::Layout::centered_and_justified(egui::Direction::LeftToRight), |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(format!("📝 Words: {}", self.stats.total_words));
-                        ui.label(format!("📊 Lines: {}", self.stats.total_lines));
-                        ui.label(format!("🔤 Chars: {}", self.stats.total_characters));
-                        
-                        if self.stats.errors > 0 {
-                            ui.colored_label(
-                                egui::Color32::RED,
-                                format!("❌ Errors: {}", self.stats.errors),
-                            );
-                        } else if self.stats.total_words > 0 {
-                            ui.colored_label(
-                                egui::Color32::GREEN,
-                                "✅ No errors",
-                            );
-                        }
-                        
-                        if self.stats.last_check_duration.as_millis() > 0 {
-                            ui.label(format!("⚡ {}ms", self.stats.last_check_duration.as_millis()));
-                        }
-                    });
-                });
+                if self.stats.errors > 0 {
+                    ui.colored_label(
+                        egui::Color32::RED,
+                        format!("❌ Errors: {}", self.stats.errors),
+                    );
+                } else if self.stats.total_words > 0 {
+                    ui.colored_label(
+                        egui::Color32::GREEN,
+                        "✅ No errors",
+                    );
+                }
                 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if self.state.auto_check {
-                        ui.colored_label(egui::Color32::GREEN, "🔄 Auto");
-                    }
-                    
-                    let word_count = {
-                        let checker = self.spell_checker.lock().unwrap();
-                        checker.word_count()
-                    };
-                    ui.label(format!("📚 Dict: {}", word_count));
-                    
-                    if self.state.auto_detect_language {
-                        if let Some(detected) = self.stats.detected_language {
-                            if detected != self.state.selected_language {
-                                ui.colored_label(
-                                    egui::Color32::LIGHT_BLUE,
-                                    format!("🌐 ({})", detected.name()),
-                                );
-                            }
-                        }
-                    }
-                });
+                if self.stats.last_check_duration.as_millis() > 0 {
+                    ui.label(format!("⚡ {}ms", self.stats.last_check_duration.as_millis()));
+                }
             });
+        });
+        
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if self.state.auto_check {
+                ui.colored_label(egui::Color32::GREEN, "🔄 Auto");
+            }
+            
+            let word_count = {
+                let checker = self.spell_checker.lock().unwrap();
+                checker.word_count()
+            };
+            ui.label(format!("📚 Dict: {}", word_count));
+            
+            if self.state.auto_detect_language {
+                if let Some(detected) = self.stats.detected_language {
+                    if detected != self.state.selected_language {
+                        ui.colored_label(
+                            egui::Color32::LIGHT_BLUE,
+                            format!("🌐 ({})", detected.name()),
+                        );
+                    }
+                }
+            }
+        });
     }
     
     fn show_notification_overlay(&self, ui: &mut egui::Ui) {
@@ -897,7 +906,10 @@ impl eframe::App for SpellCheckerApp {
             self.show_menu_bar(ui);
         });
         
-        self.show_status_bar(ctx);
+        // Show status bar in a bottom panel
+        egui::TopBottomPanel::bottom("status_bar").show(ctx, |ui| {
+            self.show_status_bar(ui);
+        });
         
         egui::CentralPanel::default().show(ctx, |ui| {
             self.show_main_content(ui);

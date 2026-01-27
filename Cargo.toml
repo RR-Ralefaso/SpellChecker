@@ -2,7 +2,7 @@
 name = "spellchecker"
 version = "1.0.0"
 edition = "2021"
-authors = ["RR-RALEFASO (POLARIS) <rrralefaso@outlook.com>"]
+authors = ["RR-Ralefaso <rrralefaso@outlook.com>"]
 description = "An Atom IDE-inspired multilingual spell checker with programming language support"
 repository = "https://github.com/RR-Ralefaso/SpellChecker"
 license = "MIT"
@@ -13,7 +13,7 @@ categories = ["text-editors", "text-processing"]
 [features]
 default = ["gui"]
 cli = ["clap", "colored", "indicatif"]
-gui = ["eframe", "egui", "rfd", "egui_extras", "native-dialog"]
+gui = ["eframe", "egui", "rfd", "egui_extras"]
 
 [[bin]]
 name = "spellchecker"
@@ -34,7 +34,6 @@ eframe = { version = "0.27", features = ["persistence"], optional = true }
 egui = { version = "0.27", optional = true }
 rfd = { version = "0.14", optional = true }
 egui_extras = { version = "0.27", optional = true }
-native-dialog = { version = "2.0.0", optional = true }
 
 # Core functionality
 rayon = "1.8.0"

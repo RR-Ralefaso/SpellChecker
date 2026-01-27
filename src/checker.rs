@@ -4,11 +4,10 @@ use crate::util::{sanitize_word, is_valid_word, is_code_file, is_likely_code};
 use dashmap::DashMap;
 use rayon::prelude::*;
 use serde::Serialize;
-use std::collections::{HashSet, HashMap};
+use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 use std::sync::Arc;
-use std::cmp::min;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct WordCheck {
@@ -62,9 +61,7 @@ pub struct SpellChecker {
     user_dictionary: HashSet<String>,
     proper_nouns: HashSet<String>,
     acronyms: HashSet<String>,
-    code_patterns: HashSet<String>,
     confidence_threshold: f32,
-    enable_advanced_typo_detection: bool,
 }
 
 impl SpellChecker {
@@ -89,9 +86,7 @@ impl SpellChecker {
             user_dictionary: HashSet::new(),
             proper_nouns: HashSet::new(),
             acronyms: HashSet::new(),
-            code_patterns: HashSet::new(),
             confidence_threshold: 0.7,
-            enable_advanced_typo_detection: true,
         };
         
         // Load user data
@@ -191,7 +186,6 @@ impl SpellChecker {
         
         for (line_idx, line) in lines.iter().enumerate() {
             let line_num = line_idx + 1;
-            let mut column = 1;
             
             let word_pattern = if is_cjk {
                 crate::util::CJK_WORD_REGEX.clone()
@@ -258,8 +252,6 @@ impl SpellChecker {
                     confidence,
                     word_type,
                 });
-                
-                column = end + 1;
             }
         }
         
@@ -410,7 +402,7 @@ impl SpellChecker {
             return 1.0;
         }
         
-        let mut confidence = 0.5;
+        let mut confidence: f32 = 0.5;
         
         match word_type {
             WordType::Normal => confidence *= 1.2,
