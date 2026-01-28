@@ -382,7 +382,7 @@ impl SpellCheckerApp {
                     ui.separator();
                     
                     ui.label(format!("Version: {}", env!("CARGO_PKG_VERSION")));
-                    ui.label("Author: Rothang Ralph Ralefaso");
+                    ui.label("Author: RR-Ralefaso");
                     ui.label("Email: rrralefaso@outlook.com");
                     ui.label("GitHub: https://github.com/RR-Ralefaso/SpellChecker");
                     ui.separator();
